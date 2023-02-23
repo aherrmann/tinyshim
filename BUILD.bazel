@@ -1,6 +1,20 @@
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_zig//zig:defs.bzl", "zig_binary")
 
 zig_binary(
     name = "hello",
     main = "hello.zig",
+)
+
+genrule(
+    name = "hello_output",
+    outs = ["hello.output"],
+    cmd = "$(execpath :hello) > $(OUTS)",
+    tools = [":hello"],
+)
+
+diff_test(
+    name = "hello_test",
+    file1 = ":hello.expected",
+    file2 = ":hello.output",
 )
