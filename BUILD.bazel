@@ -1,9 +1,16 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@rules_zig//zig:defs.bzl", "zig_binary")
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary")
 
 zig_binary(
-    name = "hello",
+    name = "_hello",
     main = "hello.zig",
+    tags = ["manual"],
+)
+
+zig_configure_binary(
+    name = "hello",
+    actual = ":_hello",
+    mode = "release_small",
 )
 
 genrule(
