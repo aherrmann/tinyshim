@@ -11,6 +11,7 @@ zig_configure_binary(
     name = "hello",
     actual = ":_hello",
     mode = "release_small",
+    threaded = "single",
 )
 
 genrule(
