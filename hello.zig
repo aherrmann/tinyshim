@@ -1,9 +1,8 @@
 const std = @import("std");
 
 fn main() void {
-    std.io.getStdOut().writeAll(
-        "Hello World!\n",
-    ) catch unreachable;
+    const msg = "Hello World!\n";
+    _ = std.os.linux.write(std.os.linux.STDOUT_FILENO, msg, msg.len);
 }
 
 //////////////////////////////////////////////////////////////////////
