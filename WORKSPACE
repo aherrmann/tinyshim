@@ -28,6 +28,8 @@ zig_package(
     visibility = ["//visibility:public"],
 )
 """,
+    patch_args = ["-p1"],
+    patches = ["//patches/zig-clap:multiple-positional-parameters.patch"],
     sha256 = "07c426248a729fbd443d3cc42c70c6bcf5bd2a18cf6a08ab9097f31a397a374f",
     strip_prefix = "zig-clap-0.6.0",
     url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.6.0.tar.gz",

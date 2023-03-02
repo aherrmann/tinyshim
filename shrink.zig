@@ -11,7 +11,8 @@ pub fn main() !void {
         \\-h, --help             Display this help and exit.
         \\-n, --number <usize>   An option parameter, which takes a value.
         \\-s, --string <str>...  An option parameter which can be specified multiple times.
-        \\<str>...
+        \\<str>                  foo
+        \\<str>...               bar
         \\
     );
 
@@ -28,8 +29,11 @@ pub fn main() !void {
     };
     defer res.deinit();
 
-    if (res.args.help)
-        debug.print("--help\n", .{});
+    if (res.args.help) {
+        try clap.usage(std.io.getStdErr().writer(), clap.Help, &params);
+        try std.io.getStdErr().writeAll("\n");
+        try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+    }
     if (res.args.number) |n|
         debug.print("--number = {}\n", .{n});
     for (res.args.string) |s|
