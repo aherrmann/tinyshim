@@ -1,9 +1,28 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@rules_zig//zig:defs.bzl", "zig_binary")
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary")
 
 zig_binary(
-    name = "hello",
+    name = "_hello",
     main = "hello.zig",
+    tags = ["manual"],
+)
+
+zig_configure_binary(
+    name = "_hello_configured",
+    actual = ":_hello",
+    mode = "release_small",
+    threaded = "single",
+)
+
+genrule(
+    name = "_hello_stripped",
+    srcs = [":_hello_configured"],
+    outs = ["hello"],
+    cmd = """\
+$(OBJCOPY) --remove-section .comment $(SRCS) $(OUTS)
+""",
+    executable = True,
+    toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
 )
 
 genrule(
