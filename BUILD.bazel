@@ -2,6 +2,11 @@ load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary")
 
 zig_binary(
+    name = "shrink",
+    main = "shrink.zig",
+)
+
+zig_binary(
     name = "_hello",
     main = "hello.zig",
     tags = ["manual"],
