@@ -16,3 +16,19 @@ zig_register_toolchains(
     name = "zig",
     zig_version = "0.10.1",
 )
+
+http_archive(
+    name = "clap",
+    build_file_content = """\
+load("@rules_zig//zig:defs.bzl", "zig_package")
+zig_package(
+    name = "clap",
+    main = "clap.zig",
+    srcs = glob(["clap/**/*.zig"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "07c426248a729fbd443d3cc42c70c6bcf5bd2a18cf6a08ab9097f31a397a374f",
+    strip_prefix = "zig-clap-0.6.0",
+    url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.6.0.tar.gz",
+)

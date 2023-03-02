@@ -4,6 +4,7 @@ load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary")
 zig_binary(
     name = "shrink",
     main = "shrink.zig",
+    deps = ["@clap"],
 )
 
 zig_binary(
