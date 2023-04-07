@@ -9,16 +9,19 @@ const Args = struct {
     const params = clap.parseParamsComptime(
         \\-h, --help   Display this help and exit.
         \\<FILE>       The ELF file to shrink.
+        \\<PATH>       Where to store the shrunk ELF file.
         \\
     );
     const parsers = .{
         .FILE = clap.parsers.string,
+        .PATH = clap.parsers.string,
     };
 
     diag: clap.Diagnostic,
     res: clap.Result(clap.Help, &params, parsers),
 
     elf_file: []const u8,
+    out_path: []const u8,
 
     fn usage() !void {
         try io.getStdErr().writer().print("{s} ", .{exe_name});
@@ -40,16 +43,18 @@ const Args = struct {
             try clap.help(io.getStdErr().writer(), clap.Help, &params, .{});
             return null;
         }
-        if (res.positionals.len < 1) {
+        if (res.positionals.len < 2) {
             try io.getStdErr().writeAll("Missing positional argument\n\n");
             try usage();
             return error.MissingArgument;
         }
         const elf_file = res.positionals[0];
+        const out_path = res.positionals[1];
         return Args{
             .diag = diag,
             .res = res,
             .elf_file = elf_file,
+            .out_path = out_path,
         };
     }
 
@@ -62,4 +67,5 @@ pub fn main() !void {
     var args = (try Args.parse()) orelse return;
     defer args.deinit();
     debug.print("{s}\n", .{args.elf_file});
+    debug.print("{s}\n", .{args.out_path});
 }
