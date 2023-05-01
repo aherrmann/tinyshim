@@ -30,24 +30,13 @@ zig_configure_binary(
 run_binary(
     name = "_shrink_hello",
     srcs = [":_hello_configured"],
-    outs = ["_hello_shrunk"],
+    outs = ["hello"],
     args = [
         "$(location :_hello_configured)",
-        "$(location :_hello_shrunk)",
+        "$(location :hello)",
         ".bss",
     ],
     tool = ":shrink",
-)
-
-genrule(
-    name = "_hello_stripped",
-    srcs = [":_hello_configured"],
-    outs = ["hello"],
-    cmd = """\
-$(OBJCOPY) --remove-section .comment $(SRCS) $(OUTS)
-""",
-    executable = True,
-    toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
 )
 
 genrule(
