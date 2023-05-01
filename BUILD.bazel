@@ -1,5 +1,18 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_test")
+
+zig_binary(
+    name = "shrink",
+    main = "shrink.zig",
+    deps = ["@clap"],
+)
+
+zig_test(
+    name = "shrink_test",
+    main = "shrink.zig",
+    deps = ["@clap"],
+)
 
 zig_binary(
     name = "_hello",
@@ -14,15 +27,16 @@ zig_configure_binary(
     threaded = "single",
 )
 
-genrule(
-    name = "_hello_stripped",
+run_binary(
+    name = "_shrink_hello",
     srcs = [":_hello_configured"],
     outs = ["hello"],
-    cmd = """\
-$(OBJCOPY) --remove-section .comment $(SRCS) $(OUTS)
-""",
-    executable = True,
-    toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
+    args = [
+        "$(location :_hello_configured)",
+        "$(location :hello)",
+        ".bss",
+    ],
+    tool = ":shrink",
 )
 
 genrule(
