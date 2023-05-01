@@ -71,6 +71,17 @@ const Args = struct {
     }
 };
 
+/// Reads the section header string table (shstrtab) from the given ELF file.
+/// The `elf_header` and `parse_source` should correspond to a valid ELF file.
+/// Allocates memory for the shstrtab using the provided `allocator`.
+/// Returns the shstrtab as a slice of bytes on success or an error on failure.
+///
+/// Errors:
+///     - `ShstrtabUndefined`: The shstrtab is not defined in the ELF header.
+///     - `SectionHeaderNotFound`: The section header for the shstrtab is not found.
+///     - `IncompleteShstrtab`: The shstrtab is not completely read from the ELF file.
+///
+/// Note: The caller is responsible for deallocating the memory of the returned shstrtab.
 fn readShstrtab(allocator: std.mem.Allocator, elf_header: elf.Header, parse_source: anytype) ![]u8 {
     if (elf_header.shstrndx == elf.SHN_UNDEF) {
         return error.ShstrtabUndefined;
@@ -100,6 +111,19 @@ fn readShstrtab(allocator: std.mem.Allocator, elf_header: elf.Header, parse_sour
     }
 }
 
+/// Creates a test ELF file with a single section that is either a NOBITS or a PROGBITS section
+/// depending on the `nobits_section` parameter and a shstrtab.
+///
+/// Arguments:
+///   allocator: An instance of `std.mem.Allocator` to allocate memory for the resulting ELF data.
+///   nobits_section: A boolean to indicate whether the test section should be a NOBITS section.
+///                   If `true`, the test section will be a NOBITS section with a non-zero size
+///                   but no actual data in the file. If `false`, the test section will be a
+///                   PROGBITS section with actual data.
+///
+/// Returns:
+///   A slice of bytes representing the generated ELF data. The caller is responsible for
+///   freeing the memory allocated by the allocator.
 fn createTestElf(allocator: std.mem.Allocator, nobits_section: bool) ![]u8 {
     var buf: [512]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
@@ -246,6 +270,13 @@ test "readShstrtab: SectionHeaderNotFound" {
     try std.testing.expectError(error.SectionHeaderNotFound, result);
 }
 
+/// Returns the index of an ELF section with the given name in the shstrtab,
+/// `error.SectionNotFound` otherwise.
+///
+/// * `elf_header`: The ELF header of the file.
+/// * `parse_source`: A seekable stream for the ELF file.
+/// * `shstrtab`: A slice containing the contents of the shstrtab section.
+/// * `section_name`: The name of the section to find.
 fn findSectionIndexByName(
     elf_header: elf.Header,
     parse_source: anytype,
@@ -306,6 +337,13 @@ test "findSectionIndexByName failure" {
     try std.testing.expectError(error.SectionNotFound, result);
 }
 
+/// Returns the past the end offset of the specified section in an ELF file,
+/// i.e. the offset immediately following the section's data (if any) in the file.
+/// Returns `error.SectionIndexNotFound` if the given section index is not found.
+///
+/// * `elf_header`: The ELF header of the input file.
+/// * `parse_source`: A seekable stream or fixed buffer stream of the input ELF file.
+/// * `section_index`: The index of the section for which the end offset is required.
 fn getSectionEndOffset(
     elf_header: elf.Header,
     parse_source: anytype,
@@ -361,6 +399,11 @@ test "getSectionEndOffset success with NOBITS section" {
     try std.testing.expectEqual(@as(u64, 64), end_offset);
 }
 
+/// This function modifies the ELF header in the buffer to remove references to the
+/// section header table and the shstrtab, effectively deleting these sections.
+/// The buffer must provide a .reader(), .writer(), and .seekableStream() interface.
+/// The ELF header in the buffer is updated in-place.
+/// Assumes that the given buffer contains a valid ELF file.
 fn removeSectionHeadersAndShstrtab(buffer: anytype) !void {
     const input_elf = try elf.Header.read(buffer);
 
@@ -412,6 +455,18 @@ test "removeSectionHeadersAndShstrtab" {
     try std.testing.expectEqual(@as(u16, 0), modified_elf.shstrndx);
 }
 
+/// Removes sections past the target section from an ELF file, given the target section name, and
+/// returns a new ELF file buffer without the removed sections. The section headers and shstrtab
+/// are also removed from the new ELF file.
+///
+/// allocator is used for any memory allocations that this function performs.
+/// parse_source should provide the .reader() and .seekableStream() methods, such as a
+/// fixed buffer stream or a file stream, containing the input ELF file.
+/// target_section_name is the name of the target section, up to which the sections should be
+/// retained in the new ELF file.
+///
+/// Returns a new buffer containing the bytes of the modified ELF file.
+/// The caller is responsible for freeing this buffer.
 fn dropSectionsPastTarget(
     allocator: mem.Allocator,
     parse_source: anytype,
@@ -464,6 +519,12 @@ test "dropSectionsPastTarget" {
     try std.testing.expectEqual(@as(usize, 192), modified_elf_data.len);
 }
 
+/// Shrinks an ELF file by removing all section headers and sections past a specified section,
+/// and writes the result to a new file.
+/// This function takes an `allocator` for temporary memory allocation, `input_path` as the
+/// path to the input ELF file, `output_path` as the path to the output ELF file, and
+/// `target_section_name` as the name of the target section to stop at.
+/// If the target section is not found, an error is returned.
 fn shrink(
     allocator: mem.Allocator,
     input_path: []const u8,
