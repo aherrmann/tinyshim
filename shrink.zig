@@ -103,7 +103,7 @@ fn readShstrtab(allocator: std.mem.Allocator, elf_header: elf.Header, parse_sour
 fn createTestElf(allocator: std.mem.Allocator, nobits_section: bool) ![]u8 {
     var buf: [512]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    const test_size: usize = if (nobits_section) 0 else 128;
+    const test_section_data: usize = if (nobits_section) 0 else 128;
 
     // Construct a minimal ELF binary with a valid shstrtab.
     const ehdr = elf.Elf64_Ehdr{
@@ -121,7 +121,7 @@ fn createTestElf(allocator: std.mem.Allocator, nobits_section: bool) ![]u8 {
         .e_version = 0,
         .e_entry = 0,
         .e_phoff = 0,
-        .e_shoff = 128 + test_size,
+        .e_shoff = 128 + test_section_data,
         .e_flags = 0,
         .e_ehsize = @sizeOf(elf.Elf64_Ehdr),
         .e_phentsize = @sizeOf(elf.Elf64_Phdr),
@@ -136,7 +136,7 @@ fn createTestElf(allocator: std.mem.Allocator, nobits_section: bool) ![]u8 {
     const test_section = elf.Elf64_Shdr{
         .sh_name = 0,
         .sh_type = if (nobits_section) elf.SHT_NOBITS else elf.SHT_PROGBITS,
-        .sh_size = test_size,
+        .sh_size = 128,
         .sh_offset = 64,
         .sh_flags = 0,
         .sh_addr = 0,
@@ -150,7 +150,7 @@ fn createTestElf(allocator: std.mem.Allocator, nobits_section: bool) ![]u8 {
         .sh_name = 14,
         .sh_type = elf.SHT_STRTAB,
         .sh_size = shstrtab_contents.len,
-        .sh_offset = 64 + test_size,
+        .sh_offset = 64 + test_section_data,
         .sh_flags = 0,
         .sh_addr = 0,
         .sh_link = elf.SHN_UNDEF,
@@ -165,16 +165,16 @@ fn createTestElf(allocator: std.mem.Allocator, nobits_section: bool) ![]u8 {
     // test_section content
     if (!nobits_section) {
         var i: usize = 0;
-        while (i < test_size) : (i += 1) {
+        while (i < test_section_data) : (i += 1) {
             try stream.writer().writeByte(@truncate(u8, i));
         }
     }
     // shstrtab content
     try stream.writer().writeAll(shstrtab_contents);
-    try stream.seekableStream().seekTo(64 + test_size + 64);
+    try stream.seekableStream().seekTo(64 + test_section_data + 64);
     // section header table
     try stream.writer().writeAll(mem.asBytes(&test_section));
-    try stream.seekableStream().seekTo(64 + test_size + 64 + @sizeOf(elf.Elf64_Shdr));
+    try stream.seekableStream().seekTo(64 + test_section_data + 64 + @sizeOf(elf.Elf64_Shdr));
     try stream.writer().writeAll(mem.asBytes(&shstrtab_section));
 
     const output_buf = try allocator.alloc(u8, buf.len);
