@@ -16,6 +16,7 @@ zig_test(
 
 zig_binary(
     name = "_hello",
+    linker_script = "hello.ld",
     main = "hello.zig",
     tags = ["manual"],
 )
