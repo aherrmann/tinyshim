@@ -1,8 +1,24 @@
 const std = @import("std");
 
-fn main() void {
-    const msg = "Hello World!\n";
-    _ = std.os.linux.write(std.os.linux.STDOUT_FILENO, msg, msg.len);
+pub const Payload = extern struct {
+    exec: [*:0]const u8,
+};
+
+const payload = Payload{
+    .exec = "/bin/echo",
+};
+
+fn main() u8 {
+    const argv = [_:null]?[*:0]const u8{ payload.exec, "Hello World!", null };
+    const envp = [_:null]?[*:0]const u8{};
+    switch (std.os.linux.getErrno(std.os.linux.execve(payload.exec, &argv, &envp))) {
+        .SUCCESS => {},
+        else => {
+            const msg = "execve failed\n";
+            _ = std.os.linux.write(std.os.linux.STDERR_FILENO, msg, msg.len);
+        },
+    }
+    return 1;
 }
 
 //////////////////////////////////////////////////////////////////////
