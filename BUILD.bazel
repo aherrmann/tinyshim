@@ -14,6 +14,11 @@ zig_test(
     deps = ["@clap"],
 )
 
+zig_test(
+    name = "allocator_test",
+    main = "allocator.zig",
+)
+
 zig_binary(
     name = "_shim",
     linker_script = "shim.ld",
