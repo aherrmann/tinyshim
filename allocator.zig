@@ -1,5 +1,87 @@
 const std = @import("std");
 const mem = std.mem;
+const os = std.os;
+
+const SimplePageAllocator = struct {
+    pub fn alloc(count: usize) ![]align(mem.page_size) u8 {
+        const size = mem.alignForward(count, mem.page_size);
+        const ptr = try os.mmap(null, size, os.PROT.READ | os.PROT.WRITE, os.MAP.PRIVATE | os.MAP.ANONYMOUS, -1, 0);
+        return ptr;
+    }
+
+    pub fn free(ptr: []align(mem.page_size) u8) void {
+        os.munmap(ptr);
+    }
+};
+
+fn StackOrPageBuffer(comptime stack_size: usize) type {
+    return union(enum) {
+        const Self = @This();
+
+        stack_buffer: [stack_size]u8,
+        page_buffer: []u8,
+
+        pub fn init(required_size: usize) !Self {
+            if (required_size <= stack_size) {
+                return Self{ .stack_buffer = undefined };
+            } else {
+                return Self{ .page_buffer = try SimplePageAllocator.alloc(required_size) };
+            }
+        }
+
+        pub fn deinit(self: *Self) void {
+            switch (self.*) {
+                .stack_buffer => {},
+                .page_buffer => |ptr| SimplePageAllocator.free(@alignCast(mem.page_size, ptr)),
+            }
+        }
+
+        pub fn get(self: *Self) []u8 {
+            switch (self.*) {
+                .stack_buffer => |*slice| return slice,
+                .page_buffer => |ptr| return ptr,
+            }
+        }
+    };
+}
+
+test "StackOrPageBuffer stack allocated" {
+    const stack_size = 4096;
+    const required_size = stack_size;
+
+    var buf = try StackOrPageBuffer(stack_size).init(required_size);
+    defer buf.deinit();
+
+    // Ensure the buffer has the correct size
+    try std.testing.expect(required_size <= buf.get().len);
+
+    // Ensure the buffer is stack allocated
+    try std.testing.expectEqualStrings("stack_buffer", @tagName(buf));
+
+    // Ensure the buffer is persistent.
+    const msg = "Hello world";
+    std.mem.copy(u8, buf.get(), msg);
+    try std.testing.expectEqualStrings(msg, buf.get()[0..msg.len]);
+}
+
+test "StackOrPageBuffer page allocated" {
+    const required_size = 7000;
+    const stack_size = 4096;
+
+    var buf = try StackOrPageBuffer(stack_size).init(required_size);
+    defer buf.deinit();
+
+    // Ensure the buffer has the correct size
+    try std.testing.expect(required_size <= buf.get().len);
+
+    // Ensure the buffer is page allocated
+    try std.testing.expectEqualStrings("page_buffer", @tagName(buf));
+
+    // Ensure the buffer is persistent.
+    const msg = "Hello world";
+    std.mem.copy(u8, buf.get(), msg);
+    try std.testing.expectEqualStrings(msg, buf.get()[0..msg.len]);
+}
 
 const SimpleBumpAllocator = struct {
     buffer: []u8,
