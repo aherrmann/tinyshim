@@ -22,7 +22,7 @@ const SimplePageAllocator = struct {
 
 /// A buffer that uses either stack or page allocation
 /// depending on the required size.
-fn StackOrPageBuffer(comptime stack_size: usize) type {
+pub fn StackOrPageBuffer(comptime stack_size: usize) type {
     return union(enum) {
         const Self = @This();
 
@@ -95,12 +95,12 @@ test "StackOrPageBuffer page allocated" {
 }
 
 /// A simple bump allocator that allocates from a fixed-size buffer.
-const SimpleBumpAllocator = struct {
+pub const SimpleBumpAllocator = struct {
     buffer: []u8,
     cursor: usize,
 
     /// Initializes the allocator with the given `buffer`.
-    fn init(buffer: []u8) SimpleBumpAllocator {
+    pub fn init(buffer: []u8) SimpleBumpAllocator {
         return SimpleBumpAllocator{
             .buffer = buffer,
             .cursor = 0,
@@ -108,7 +108,7 @@ const SimpleBumpAllocator = struct {
     }
 
     /// Allocates an array of `T` with `n` elements from the buffer.
-    fn alloc(self: *SimpleBumpAllocator, comptime T: type, n: usize) ![]T {
+    pub fn alloc(self: *SimpleBumpAllocator, comptime T: type, n: usize) ![]T {
         const align_offset = mem.alignForward(self.cursor, @alignOf(T));
         const required_size = n * @sizeOf(T);
         const new_cursor = align_offset + required_size;
@@ -121,6 +121,14 @@ const SimpleBumpAllocator = struct {
         self.cursor = new_cursor;
 
         return result;
+    }
+
+    /// Allocates an array of `T` with `n` elements
+    /// and a sentinel value at the end from the buffer.
+    pub fn allocSentinel(self: *SimpleBumpAllocator, comptime T: type, n: usize, comptime sentinel: T) ![:sentinel]T {
+        var result = try self.alloc(T, n + 1);
+        result[n] = sentinel;
+        return std.meta.assumeSentinel(result, sentinel);
     }
 };
 
@@ -147,4 +155,14 @@ test "bump allocator" {
     // try to allocate beyond the buffer.
     const used_space = mem.alignForward((one.len + ten.len) * @sizeOf(u8), @alignOf(u64)) + hundred.len * @sizeOf(u64);
     try std.testing.expectError(error.OutOfMemory, allocator.alloc(u8, SIZE - used_space + 1));
+}
+
+test "bump allocator allocSentinel" {
+    const SIZE = 4096;
+    var buffer: [SIZE]u8 = undefined;
+    var allocator = SimpleBumpAllocator.init(&buffer);
+
+    const sentinel_value: u8 = 0xFF;
+    var arr = try allocator.allocSentinel(u8, 5, sentinel_value);
+    try std.testing.expectEqual(@as(u8, sentinel_value), arr[5]);
 }
