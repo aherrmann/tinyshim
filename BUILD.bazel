@@ -14,8 +14,14 @@ zig_test(
     deps = ["@clap"],
 )
 
+zig_test(
+    name = "allocator_test",
+    main = "allocator.zig",
+)
+
 zig_binary(
     name = "_shim",
+    srcs = ["allocator.zig"],
     linker_script = "shim.ld",
     main = "shim.zig",
     tags = ["manual"],
@@ -43,7 +49,7 @@ run_binary(
 genrule(
     name = "shim_output",
     outs = ["shim.output"],
-    cmd = "$(execpath :shim) > $(OUTS)",
+    cmd = "$(execpath :shim) World! > $(OUTS)",
     tools = [":shim"],
 )
 

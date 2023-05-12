@@ -1,17 +1,40 @@
 const std = @import("std");
+const StackOrPageBuffer = @import("allocator.zig").StackOrPageBuffer;
+const SimpleBumpAllocator = @import("allocator.zig").SimpleBumpAllocator;
 
 pub const Payload = extern struct {
     exec: [*:0]const u8,
+    argc_pre: usize,
+    argv_pre: [*]const [*:0]const u8,
 };
 
 const payload = Payload{
     .exec = "/bin/echo",
+    .argc_pre = 1,
+    .argv_pre = &[_][*:0]const u8{"Hello"},
 };
 
 fn main() u8 {
-    const argv = [_:null]?[*:0]const u8{ payload.exec, "Hello World!", null };
+    const new_argc = payload.argc_pre + std.os.argv.len;
+    const buffer_size = (new_argc + 1) * @sizeOf([*]void);
+
+    const STACK_BUFFER_SIZE: usize = 32768;
+    var buffer = StackOrPageBuffer(STACK_BUFFER_SIZE).init(buffer_size) catch {
+        return 1;
+    };
+    // memory will be reclaimed by OS on execve or exit.
+    // defer buffer.deinit();
+    var allocator = SimpleBumpAllocator.init(buffer.get());
+
+    var new_argv = allocator.allocSentinel(?[*:0]const u8, new_argc, null) catch {
+        return 1;
+    };
+    new_argv[0] = payload.exec;
+    std.mem.copy(?[*:0]const u8, new_argv[1..], payload.argv_pre[0..payload.argc_pre]);
+    std.mem.copy(?[*:0]const u8, new_argv[1 + payload.argc_pre ..], std.os.argv[1..]);
+
     const envp = [_:null]?[*:0]const u8{};
-    switch (std.os.linux.getErrno(std.os.linux.execve(payload.exec, &argv, &envp))) {
+    switch (std.os.linux.getErrno(std.os.linux.execve(payload.exec, new_argv, &envp))) {
         .SUCCESS => {},
         else => {
             const msg = "execve failed\n";
