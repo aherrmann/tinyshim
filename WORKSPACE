@@ -2,10 +2,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "rules_zig",
-    auth_patterns = {"github.com": "Bearer <password>"},
-    sha256 = "f09f397729072f1a7c76fa0ab8c0167d07fb7564e82d9565882ddb2c5506eff8",
-    strip_prefix = "rules_zig-185b22ca077f4c6410e6b287a01dd4126af58ce8",
-    url = "https://github.com/aherrmann/rules_zig/archive/185b22ca077f4c6410e6b287a01dd4126af58ce8.tar.gz",
+    sha256 = "14401b13b87a5c3eabaad10c5c32f81cd4216344556dc7065211f256754bdd7e",
+    strip_prefix = "rules_zig-da4031aa75b1d496a32688a42890cce6870c83d7",
+    url = "https://github.com/aherrmann/rules_zig/archive/da4031aa75b1d496a32688a42890cce6870c83d7.tar.gz",
 )
 
 load("@rules_zig//zig:repositories.bzl", "rules_zig_dependencies", "zig_register_toolchains")
