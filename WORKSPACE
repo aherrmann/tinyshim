@@ -27,6 +27,7 @@ zig_package(
     visibility = ["//visibility:public"],
 )
 """,
+    # TODO[AH] remove once https://github.com/Hejsil/zig-clap/pull/97 is merged.
     patch_args = ["-p1"],
     patches = ["//patches/zig-clap:multiple-positional-parameters.patch"],
     sha256 = "07c426248a729fbd443d3cc42c70c6bcf5bd2a18cf6a08ab9097f31a397a374f",
