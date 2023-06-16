@@ -1,6 +1,8 @@
-/* Linker script for a minimal binary.
+/* Linker script for a minimal shim template.
  *
- * This script is intended to generate a very small and compact binary.
+ * This script is intended to generate a very small and compact binary with a
+ * payload section at the very end that can easily be swapped out to hold
+ * different data without invalidating any addresses.
  *
  * When segments are loaded into memory their memory offset must match their
  * file offset modulo page size. To generate a compact binary we make sections
@@ -17,6 +19,7 @@ PHDRS
   READONLY PT_LOAD FILEHDR PHDRS;
   EXEC PT_LOAD;
   READWRITE PT_LOAD;
+  PAYLOAD PT_LOAD;
 }
 
 SECTIONS
@@ -31,4 +34,9 @@ SECTIONS
   .bss : { *(.bss*) } : READWRITE
   . += 0x10000 - SIZEOF(.bss) % 0x10000;
   .data : { *(.data*) } : READWRITE
+  . += 0x10000;
+  .payload ALIGN(0x8): {
+    PROVIDE(payload_start = .);
+    *(.payload*)
+  } : PAYLOAD
 }
