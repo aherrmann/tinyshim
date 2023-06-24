@@ -8,11 +8,8 @@ pub const Payload = extern struct {
     argv_pre: [*]const [*:0]const u8,
 };
 
-const payload = Payload{
-    .exec = "/bin/echo",
-    .argc_pre = 1,
-    .argv_pre = &[_][*:0]const u8{"Hello"},
-};
+extern const payload_start: *const anyopaque;
+const payload = @ptrCast(*const Payload, @alignCast(8, &payload_start));
 
 fn main() u8 {
     const new_argc = payload.argc_pre + std.os.argv.len;

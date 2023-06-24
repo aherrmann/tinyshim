@@ -22,6 +22,7 @@ zig_test(
 zig_binary(
     name = "_shim",
     srcs = ["allocator.zig"],
+    csrcs = ["payload.c"],
     linker_script = "shim.ld",
     main = "shim.zig",
     tags = ["manual"],
@@ -41,7 +42,7 @@ run_binary(
     args = [
         "$(location :_shim_configured)",
         "$(location :shim)",
-        ".bss",
+        ".payload",
     ],
     tool = ":shrink",
 )
