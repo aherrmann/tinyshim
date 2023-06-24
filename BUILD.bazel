@@ -41,6 +41,21 @@ zig_test(
     main = "elf_util.zig",
 )
 
+zig_test(
+    name = "shim_layout_test",
+    srcs = ["elf_util.zig"],
+    main = "shim_layout_test.zig",
+    tags = ["manual"],
+)
+
+# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
+sh_test(
+    name = "shim_layout_test_run",
+    srcs = [":shim_layout_test"],
+    args = ["$(rootpath :shim_unstripped)"],
+    data = [":shim_unstripped"],
+)
+
 zig_binary(
     name = "shrink",
     srcs = ["elf_util.zig"],
