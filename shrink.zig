@@ -8,7 +8,7 @@ const Args = struct {
         \\-h, --help   Display this help and exit.
         \\<FILE>       The ELF file to shrink.
         \\<PATH>       Where to store the shrunk ELF file.
-        \\<STRING>     Delete sections after this.
+        \\<STRING>     Delete sections starting from this section.
         \\
     );
     const parsers = .{
@@ -66,11 +66,11 @@ const Args = struct {
     }
 };
 
-/// Shrinks an ELF file by removing all section headers and sections past a specified section,
+/// Shrinks an ELF file by removing all section headers and sections from a specified section,
 /// and writes the result to a new file.
 /// This function takes an `allocator` for temporary memory allocation, `input_path` as the
 /// path to the input ELF file, `output_path` as the path to the output ELF file, and
-/// `target_section_name` as the name of the target section to stop at.
+/// `target_section_name` as the name of the target section to delete from.
 /// If the target section is not found, an error is returned.
 fn shrink(
     allocator: std.mem.Allocator,
@@ -81,7 +81,7 @@ fn shrink(
     const input_file = try std.fs.cwd().openFile(input_path, .{});
     defer input_file.close();
 
-    const modified_data = try elf_util.dropSectionsPastTarget(allocator, input_file, target_section_name);
+    const modified_data = try elf_util.dropSectionsFromTarget(allocator, input_file, target_section_name);
     defer allocator.free(modified_data);
 
     const output_file = try std.fs.cwd().createFile(output_path, .{});
