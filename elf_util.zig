@@ -281,7 +281,7 @@ pub fn getSectionEndOffset(
     var sh_iter = elf_header.section_header_iterator(parse_source);
 
     var current_index: u16 = 0;
-    while (try sh_iter.next()) |shdr| {
+    while (try sh_iter.next()) |shdr| : (current_index += 1) {
         if (current_index == section_index) {
             if (shdr.sh_type == std.elf.SHT_NOBITS) {
                 return shdr.sh_offset;
@@ -289,7 +289,6 @@ pub fn getSectionEndOffset(
                 return shdr.sh_offset + shdr.sh_size;
             }
         }
-        current_index += 1;
     }
 
     return error.SectionIndexNotFound;
@@ -325,6 +324,62 @@ test "getSectionEndOffset success with NOBITS section" {
     const input_elf = try std.elf.Header.read(&parse_source);
 
     const end_offset = try getSectionEndOffset(input_elf, &parse_source, 0);
+    try std.testing.expectEqual(@as(u64, 64), end_offset);
+}
+
+/// Returns the start offset of the specified section in an ELF file.
+/// Returns `error.SectionIndexNotFound` if the given section index is not found.
+///
+/// * `elf_header`: The ELF header of the input file.
+/// * `parse_source`: A seekable stream or fixed buffer stream of the input ELF file.
+/// * `section_index`: The index of the section for which the start offset is required.
+fn getSectionStartOffset(
+    elf_header: std.elf.Header,
+    parse_source: anytype,
+    section_index: u16,
+) !usize {
+    var sh_iter = elf_header.section_header_iterator(parse_source);
+
+    var current_index: u16 = 0;
+    while (try sh_iter.next()) |shdr| : (current_index += 1) {
+        if (current_index == section_index) {
+            return shdr.sh_offset;
+        }
+    }
+
+    return error.SectionIndexNotFound;
+}
+
+test "getSectionStartOffset success" {
+    var allocator = std.testing.allocator;
+    const elf_data = try createTestElf(allocator, false);
+    defer allocator.free(elf_data);
+    var parse_source = std.io.fixedBufferStream(elf_data);
+    const input_elf = try std.elf.Header.read(&parse_source);
+
+    const start_offset = try getSectionStartOffset(input_elf, &parse_source, input_elf.shstrndx);
+    try std.testing.expectEqual(@as(u64, 192), start_offset);
+}
+
+test "getSectionStartOffset non-existent section index" {
+    var allocator = std.testing.allocator;
+    const elf_data = try createTestElf(allocator, false);
+    defer allocator.free(elf_data);
+    var parse_source = std.io.fixedBufferStream(elf_data);
+    const input_elf = try std.elf.Header.read(&parse_source);
+
+    const result = getSectionStartOffset(input_elf, &parse_source, 2);
+    try std.testing.expectError(error.SectionIndexNotFound, result);
+}
+
+test "getSectionStartOffset success with NOBITS section" {
+    var allocator = std.testing.allocator;
+    const elf_data = try createTestElf(allocator, true);
+    defer allocator.free(elf_data);
+    var parse_source = std.io.fixedBufferStream(elf_data);
+    const input_elf = try std.elf.Header.read(&parse_source);
+
+    const end_offset = try getSectionStartOffset(input_elf, &parse_source, 0);
     try std.testing.expectEqual(@as(u64, 64), end_offset);
 }
 
@@ -445,5 +500,69 @@ test "dropSectionsPastTarget" {
     try std.testing.expectEqual(@as(u64, 0), modified_elf_header.shoff);
 
     // Check that the ELF file was truncated at the end of the target section
+    try std.testing.expectEqual(@as(usize, 192), modified_elf_data.len);
+}
+
+/// Removes the target section and sections past it from an ELF file, given the target section name, and
+/// returns a new ELF file buffer without the removed sections. The section headers and shstrtab
+/// are also removed from the new ELF file.
+///
+/// allocator is used for any memory allocations that this function performs.
+/// parse_source should provide the .reader() and .seekableStream() methods, such as a
+/// fixed buffer stream or a file stream, containing the input ELF file.
+/// target_section_name is the name of the target section, from which and beyond the sections should be
+/// removed in the new ELF file.
+///
+/// Returns a new buffer containing the bytes of the modified ELF file.
+/// The caller is responsible for freeing this buffer.
+pub fn dropSectionsFromTarget(
+    allocator: std.mem.Allocator,
+    parse_source: anytype,
+    target_section_name: []const u8,
+) ![]u8 {
+    const input_elf_header = try std.elf.Header.read(parse_source);
+
+    const shstrtab = try readShstrtab(allocator, input_elf_header, parse_source);
+    defer allocator.free(shstrtab);
+
+    const target_section_index = try findSectionIndexByName(input_elf_header, parse_source, shstrtab, target_section_name);
+
+    const target_section_start_offset = try getSectionStartOffset(input_elf_header, parse_source, target_section_index);
+
+    var new_elf_buffer = try allocator.alloc(u8, target_section_start_offset);
+    var new_elf_stream = std.io.fixedBufferStream(new_elf_buffer);
+
+    try parse_source.seekableStream().seekTo(0);
+    try parse_source.reader().readNoEof(new_elf_buffer);
+
+    try removeSectionHeadersAndShstrtab(&new_elf_stream);
+
+    return new_elf_buffer;
+}
+
+test "dropSectionsFromTarget" {
+    const allocator = std.testing.allocator;
+
+    // Create an ELF binary with a test section
+    const input_elf_data = try createTestElf(allocator, false);
+    defer allocator.free(input_elf_data);
+    var input_stream = std.io.fixedBufferStream(input_elf_data);
+
+    // Call the dropSectionsFromTarget function
+    const target_section_name = ".shstrtab";
+    var modified_elf_data = try dropSectionsFromTarget(allocator, &input_stream, target_section_name);
+    defer allocator.free(modified_elf_data);
+    var modified_stream = std.io.fixedBufferStream(modified_elf_data);
+
+    // Read the modified ELF header
+    const modified_elf_header = try std.elf.Header.read(&modified_stream);
+
+    // Check that the section headers and shstrtab have been removed
+    try std.testing.expectEqual(@as(u16, 0), modified_elf_header.shnum);
+    try std.testing.expectEqual(@as(u16, 0), modified_elf_header.shentsize);
+    try std.testing.expectEqual(@as(u16, std.elf.SHN_UNDEF), modified_elf_header.shstrndx);
+    try std.testing.expectEqual(@as(u64, 0), modified_elf_header.shoff);
+
+    // Check that the ELF file was truncated at the start of the target section
     try std.testing.expectEqual(@as(usize, 192), modified_elf_data.len);
 }
