@@ -2,6 +2,40 @@ load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_test")
 
+zig_test(
+    name = "allocator_test",
+    main = "allocator.zig",
+)
+
+zig_binary(
+    name = "_shim_unconfigured",
+    srcs = ["allocator.zig"],
+    csrcs = ["payload.c"],
+    linker_script = "shim.ld",
+    main = "shim.zig",
+    tags = ["manual"],
+)
+
+zig_configure_binary(
+    name = "shim_unstripped",
+    actual = ":_shim_unconfigured",
+    mode = "release_small",
+    threaded = "single",
+)
+
+genrule(
+    name = "shim_output",
+    outs = ["shim_output.actual"],
+    cmd = "$(execpath :shim_unstripped) World! > $(OUTS)",
+    tools = [":shim_unstripped"],
+)
+
+diff_test(
+    name = "shim_output_test",
+    file1 = ":shim_output.expected",
+    file2 = ":shim_output.actual",
+)
+
 zig_binary(
     name = "shrink",
     main = "shrink.zig",
@@ -14,48 +48,14 @@ zig_test(
     deps = ["@clap"],
 )
 
-zig_test(
-    name = "allocator_test",
-    main = "allocator.zig",
-)
-
-zig_binary(
-    name = "_shim",
-    srcs = ["allocator.zig"],
-    csrcs = ["payload.c"],
-    linker_script = "shim.ld",
-    main = "shim.zig",
-    tags = ["manual"],
-)
-
-zig_configure_binary(
-    name = "_shim_configured",
-    actual = ":_shim",
-    mode = "release_small",
-    threaded = "single",
-)
-
 run_binary(
-    name = "_shrink_shim",
-    srcs = [":_shim_configured"],
-    outs = ["shim"],
+    name = "shrink_shim",
+    srcs = [":shim_unstripped"],
+    outs = ["shim_template"],
     args = [
-        "$(location :_shim_configured)",
-        "$(location :shim)",
+        "$(location :shim_unstripped)",
+        "$(location :shim_template)",
         ".payload",
     ],
     tool = ":shrink",
-)
-
-genrule(
-    name = "shim_output",
-    outs = ["shim.output"],
-    cmd = "$(execpath :shim) World! > $(OUTS)",
-    tools = [":shim"],
-)
-
-diff_test(
-    name = "shim_test",
-    file1 = ":shim.expected",
-    file2 = ":shim.output",
 )
