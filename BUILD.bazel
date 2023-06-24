@@ -36,14 +36,14 @@ diff_test(
     file2 = ":shim_output.actual",
 )
 
-zig_binary(
-    name = "shrink",
-    main = "shrink.zig",
-    deps = ["@clap"],
+zig_test(
+    name = "elf_util_test",
+    main = "elf_util.zig",
 )
 
-zig_test(
-    name = "shrink_test",
+zig_binary(
+    name = "shrink",
+    srcs = ["elf_util.zig"],
     main = "shrink.zig",
     deps = ["@clap"],
 )
