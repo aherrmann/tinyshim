@@ -1,12 +1,7 @@
 const std = @import("std");
 const StackOrPageBuffer = @import("allocator.zig").StackOrPageBuffer;
 const SimpleBumpAllocator = @import("allocator.zig").SimpleBumpAllocator;
-
-pub const Payload = extern struct {
-    exec: [*:0]const u8,
-    argc_pre: usize,
-    argv_pre: [*]const [*:0]const u8,
-};
+const Payload = @import("payload.zig").Payload;
 
 extern const payload_start: *const anyopaque;
 const payload = @ptrCast(*const Payload, @alignCast(8, &payload_start));

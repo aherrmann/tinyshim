@@ -2,9 +2,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "rules_zig",
-    sha256 = "a645aeab922a0cf5c01a4a8340c1adf6fa2507e2fb5b944d798596fb9affc0a9",
-    strip_prefix = "rules_zig-d4054f15f1dfbed808bd748f36656558b72fe745",
-    url = "https://github.com/aherrmann/rules_zig/archive/d4054f15f1dfbed808bd748f36656558b72fe745.tar.gz",
+    sha256 = "ffaeb88ad15f79cca1a32574a24463b2116df12af19970fc591b01396d06230d",
+    strip_prefix = "rules_zig-2fdc7c7478f7bd03a73019780f6eaf67eff6bfd3",
+    url = "https://github.com/aherrmann/rules_zig/archive/2fdc7c7478f7bd03a73019780f6eaf67eff6bfd3.tar.gz",
 )
 
 load("@rules_zig//zig:repositories.bzl", "rules_zig_dependencies", "zig_register_toolchains")
@@ -34,3 +34,14 @@ zig_package(
     strip_prefix = "zig-clap-0.6.0",
     url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.6.0.tar.gz",
 )
+
+http_archive(
+    name = "aspect_bazel_lib",
+    sha256 = "e3151d87910f69cf1fc88755392d7c878034a69d6499b287bcfc00b1cf9bb415",
+    strip_prefix = "bazel-lib-1.32.1",
+    url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.32.1/bazel-lib-v1.32.1.tar.gz",
+)
+
+load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
+
+aspect_bazel_lib_dependencies()

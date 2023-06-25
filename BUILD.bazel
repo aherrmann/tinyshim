@@ -1,6 +1,7 @@
+load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
-load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_test")
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_package", "zig_test")
 
 zig_test(
     name = "allocator_test",
@@ -9,7 +10,10 @@ zig_test(
 
 zig_binary(
     name = "_shim_unconfigured",
-    srcs = ["allocator.zig"],
+    srcs = [
+        "allocator.zig",
+        "payload.zig",
+    ],
     csrcs = ["payload.c"],
     linker_script = "shim.ld",
     main = "shim.zig",
@@ -24,16 +28,16 @@ zig_configure_binary(
 )
 
 genrule(
-    name = "shim_output",
-    outs = ["shim_output.actual"],
+    name = "shim_unstripped_output",
+    outs = ["shim_unstripped_output.actual"],
     cmd = "$(execpath :shim_unstripped) World! > $(OUTS)",
     tools = [":shim_unstripped"],
 )
 
 diff_test(
-    name = "shim_output_test",
+    name = "shim_unstripped_output_test",
     file1 = ":shim_output.expected",
-    file2 = ":shim_output.actual",
+    file2 = ":shim_unstripped_output.actual",
 )
 
 zig_test(
@@ -73,4 +77,66 @@ run_binary(
         ".payload",
     ],
     tool = ":shrink",
+)
+
+expand_template(
+    name = "shim_templates_zig",
+    out = "shim_templates.zig",
+    data = [":shim_template"],
+    substitutions = {
+        "{shim_template_path}": "shim_template",
+    },
+    template = "shim_templates.zig.tpl",
+)
+
+zig_package(
+    name = "shim_templates",
+    extra_srcs = [":shim_template"],
+    main = ":shim_templates.zig",
+)
+
+zig_test(
+    name = "mkshim_test",
+    srcs = [
+        "allocator.zig",
+        "payload.zig",
+    ],
+    main = "mkshim.zig",
+    deps = [
+        ":shim_templates",
+        "@clap",
+    ],
+)
+
+zig_binary(
+    name = "mkshim",
+    srcs = [
+        "allocator.zig",
+        "payload.zig",
+    ],
+    main = "mkshim.zig",
+    deps = [
+        ":shim_templates",
+        "@clap",
+    ],
+)
+
+run_binary(
+    name = "run_mkshim",
+    outs = ["shim_generated"],
+    args = ["$(location :shim_generated)"],
+    tool = ":mkshim",
+)
+
+genrule(
+    name = "shim_generated_output",
+    outs = ["shim_generated_output.actual"],
+    cmd = "$(execpath :shim_generated) World! > $(OUTS)",
+    tools = [":shim_generated"],
+)
+
+diff_test(
+    name = "shim_generated_output_test",
+    file1 = ":shim_output.expected",
+    file2 = ":shim_generated_output.actual",
 )
