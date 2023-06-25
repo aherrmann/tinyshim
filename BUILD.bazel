@@ -95,8 +95,23 @@ zig_package(
     main = ":shim_templates.zig",
 )
 
+zig_test(
+    name = "mkshim_test",
+    srcs = [
+        "payload.zig",
+    ],
+    main = "mkshim.zig",
+    deps = [
+        ":shim_templates",
+        "@clap",
+    ],
+)
+
 zig_binary(
     name = "mkshim",
+    srcs = [
+        "payload.zig",
+    ],
     main = "mkshim.zig",
     deps = [
         ":shim_templates",

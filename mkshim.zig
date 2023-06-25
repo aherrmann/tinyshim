@@ -1,6 +1,8 @@
+const builtin = @import("builtin");
 const clap = @import("clap");
 const std = @import("std");
 const shim_templates = @import("shim_templates");
+const Payload = @import("payload.zig").Payload;
 
 const Args = struct {
     const exe_name = "mkshim";
@@ -55,6 +57,51 @@ const Args = struct {
         self.res.deinit();
     }
 };
+
+fn payloadSize(payload: Payload) usize {
+    const pointer_align = @alignOf(*u8);
+    const pointer_size = @alignOf(*u8);
+    var result: usize = 0;
+
+    // Payload struct
+    result += std.mem.alignForward(@sizeOf(Payload), pointer_align);
+
+    // argv_pre pointer array
+    result += payload.argc_pre * pointer_size;
+
+    // exec string
+    result += std.mem.sliceTo(payload.exec, 0).len + 1;
+
+    // argv_pre string values
+    for (payload.argv_pre[0..payload.argc_pre]) |arg| {
+        result += std.mem.sliceTo(arg, 0).len + 1;
+    }
+    result = std.mem.alignForward(result, pointer_align);
+
+    return result;
+}
+
+test "payloadSize on empty payload" {
+    const payload = Payload{
+        .exec = "",
+        .argc_pre = 0,
+        .argv_pre = &[_][*:0]const u8{},
+    };
+
+    const expectedSize = std.mem.alignForward(@sizeOf(Payload) + 1, @alignOf(*u8));
+    try std.testing.expectEqual(expectedSize, payloadSize(payload));
+}
+
+test "payloadSize on non-empty payload" {
+    const payload = Payload{
+        .exec = "/bin/echo",
+        .argc_pre = 2,
+        .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" },
+    };
+
+    const expectedSize = std.mem.alignForward(@sizeOf(Payload) + 2 * @sizeOf(*u8) + 10 + 6 + 8, @alignOf(*u8));
+    try std.testing.expectEqual(expectedSize, payloadSize(payload));
+}
 
 pub fn main() !void {
     var args = (try Args.parse()) orelse return;
