@@ -28,16 +28,16 @@ zig_configure_binary(
 )
 
 genrule(
-    name = "shim_output",
-    outs = ["shim_output.actual"],
+    name = "shim_unstripped_output",
+    outs = ["shim_unstripped_output.actual"],
     cmd = "$(execpath :shim_unstripped) World! > $(OUTS)",
     tools = [":shim_unstripped"],
 )
 
 diff_test(
-    name = "shim_output_test",
+    name = "shim_unstripped_output_test",
     file1 = ":shim_output.expected",
-    file2 = ":shim_output.actual",
+    file2 = ":shim_unstripped_output.actual",
 )
 
 zig_test(
@@ -119,4 +119,24 @@ zig_binary(
         ":shim_templates",
         "@clap",
     ],
+)
+
+run_binary(
+    name = "run_mkshim",
+    outs = ["shim_generated"],
+    args = ["$(location :shim_generated)"],
+    tool = ":mkshim",
+)
+
+genrule(
+    name = "shim_generated_output",
+    outs = ["shim_generated_output.actual"],
+    cmd = "$(execpath :shim_generated) World! > $(OUTS)",
+    tools = [":shim_generated"],
+)
+
+diff_test(
+    name = "shim_generated_output_test",
+    file1 = ":shim_output.expected",
+    file2 = ":shim_generated_output.actual",
 )
