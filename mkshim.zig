@@ -193,8 +193,64 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    _ = allocator;
 
     try std.io.getStdOut().writer().print("Creating shim at {s}\n", .{args.out_path});
     try std.io.getStdOut().writer().print("Size of template {}\n", .{shim_templates.shim_template.len});
+
+    const payload = Payload{
+        .exec = "/bin/echo",
+        .argc_pre = 1,
+        .argv_pre = &[_][*:0]const u8{"Hello"},
+    };
+    const payload_size = payloadSize(payload);
+
+    var buffer = try allocator.allocBytes(
+        @alignOf(*u8),
+        shim_templates.shim_template.len + payload_size,
+        @alignOf(*u8),
+        @returnAddress(),
+    );
+    defer allocator.free(buffer);
+
+    // Copy the shim template into the output buffer
+    std.mem.copy(u8, buffer, shim_templates.shim_template);
+
+    // Parse the ELF header from the output buffer
+    var buffer_stream = std.io.fixedBufferStream(buffer);
+    const elf_header = try std.elf.Header.read(&buffer_stream);
+
+    // Parse the payload segment's Phdr.
+    // TODO[AH] Support for 32-bit.
+    // TODO[AH] Support for endiannes.
+    var payload_phdr: std.elf.Elf64_Phdr = undefined;
+    const payload_phdr_offset = elf_header.phoff + @sizeOf(@TypeOf(payload_phdr)) * (elf_header.phnum - 1);
+    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
+    try buffer_stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
+
+    // Update the payload file and memory size in the output buffer.
+    payload_phdr.p_filesz = payload_size;
+    payload_phdr.p_memsz = payload_size;
+    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
+    try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
+
+    // Encode the payload into the output buffer.
+    try encodePayload(buffer[shim_templates.shim_template.len..], payload_phdr.p_vaddr, payload);
+
+    // Write the shim.
+    var out_file = try std.fs.cwd().createFile(args.out_path, .{});
+    defer out_file.close();
+    try out_file.writeAll(buffer);
+
+    // Make the shim file executable.
+    switch (builtin.os.tag) {
+        .windows => {},
+        else => {
+            const metadata = try out_file.metadata();
+            var permissions = metadata.permissions();
+            permissions.inner.unixSet(.user, .{ .execute = true });
+            permissions.inner.unixSet(.group, .{ .execute = true });
+            permissions.inner.unixSet(.other, .{ .execute = true });
+            try out_file.setPermissions(permissions);
+        },
+    }
 }

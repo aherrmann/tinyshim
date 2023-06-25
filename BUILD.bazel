@@ -111,6 +111,7 @@ zig_test(
 zig_binary(
     name = "mkshim",
     srcs = [
+        "allocator.zig",
         "payload.zig",
     ],
     main = "mkshim.zig",
