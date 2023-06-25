@@ -98,6 +98,7 @@ zig_package(
 zig_test(
     name = "mkshim_test",
     srcs = [
+        "allocator.zig",
         "payload.zig",
     ],
     main = "mkshim.zig",
