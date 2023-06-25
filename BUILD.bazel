@@ -10,7 +10,10 @@ zig_test(
 
 zig_binary(
     name = "_shim_unconfigured",
-    srcs = ["allocator.zig"],
+    srcs = [
+        "allocator.zig",
+        "payload.zig",
+    ],
     csrcs = ["payload.c"],
     linker_script = "shim.ld",
     main = "shim.zig",
