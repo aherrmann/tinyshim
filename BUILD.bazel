@@ -1,6 +1,7 @@
+load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
-load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_test")
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_package", "zig_test")
 
 zig_test(
     name = "allocator_test",
@@ -75,8 +76,27 @@ run_binary(
     tool = ":shrink",
 )
 
+expand_template(
+    name = "shim_templates_zig",
+    out = "shim_templates.zig",
+    data = [":shim_template"],
+    substitutions = {
+        "{shim_template_path}": "shim_template",
+    },
+    template = "shim_templates.zig.tpl",
+)
+
+zig_package(
+    name = "shim_templates",
+    extra_srcs = [":shim_template"],
+    main = ":shim_templates.zig",
+)
+
 zig_binary(
     name = "mkshim",
     main = "mkshim.zig",
-    deps = ["@clap"],
+    deps = [
+        ":shim_templates",
+        "@clap",
+    ],
 )

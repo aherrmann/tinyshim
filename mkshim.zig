@@ -1,5 +1,6 @@
 const clap = @import("clap");
 const std = @import("std");
+const shim_templates = @import("shim_templates");
 
 const Args = struct {
     const exe_name = "mkshim";
@@ -65,4 +66,5 @@ pub fn main() !void {
     _ = allocator;
 
     try std.io.getStdOut().writer().print("Creating shim at {s}\n", .{args.out_path});
+    try std.io.getStdOut().writer().print("Size of template {}\n", .{shim_templates.shim_template.len});
 }
