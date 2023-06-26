@@ -9,16 +9,21 @@ const Args = struct {
     const exe_name = "mkshim";
     const params = clap.parseParamsComptime(
         \\-h, --help   Display this help and exit.
-        \\<PATH>       Where to create the generated shim.
+        \\--prepend <STRING>...  Prepend arguments on the command-line.
+        \\<PATH>                 Execute this target executable.
+        \\<PATH>                 Where to create the generated shim.
         \\
     );
     const parsers = .{
         .PATH = clap.parsers.string,
+        .STRING = clap.parsers.string,
     };
 
     diag: clap.Diagnostic,
     res: clap.Result(clap.Help, &params, parsers),
 
+    argv_pre: []const [*:0]const u8,
+    exec: [:0]const u8,
     out_path: []const u8,
 
     fn usage() !void {
@@ -41,20 +46,40 @@ const Args = struct {
             try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
             return null;
         }
-        if (res.positionals.len < 1) {
-            try std.io.getStdErr().writeAll("Missing positional argument\n\n");
+        if (res.positionals.len < 2) {
+            try std.io.getStdErr().writeAll("Missing positional arguments\n\n");
             try usage();
             return error.MissingArgument;
         }
-        const out_path = res.positionals[0];
+        if (res.positionals.len > 2) {
+            try std.io.getStdErr().writeAll("Too many positional arguments\n\n");
+            try usage();
+            return error.MissingArgument;
+        }
+        var allocator: std.mem.Allocator = res.arena.allocator();
+        var argv_pre = try allocator.alloc([*:0]const u8, res.args.prepend.len);
+        for (res.args.prepend) |arg, i| {
+            argv_pre[i] = try allocator.dupeZ(u8, arg);
+        }
+        const exec = try allocator.dupeZ(u8, res.positionals[0]);
+        const out_path = try allocator.dupeZ(u8, res.positionals[1]);
         return Args{
             .diag = diag,
             .res = res,
+            .argv_pre = argv_pre,
+            .exec = exec,
             .out_path = out_path,
         };
     }
 
     pub fn deinit(self: *Args) void {
+        var allocator: std.mem.Allocator = self.res.arena.allocator();
+        for (self.argv_pre) |arg| {
+            allocator.free(std.mem.sliceTo(arg, 0));
+        }
+        allocator.free(self.argv_pre);
+        allocator.free(self.exec);
+        allocator.free(self.out_path);
         self.res.deinit();
     }
 };
@@ -195,9 +220,9 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const payload = Payload{
-        .exec = "/bin/echo",
-        .argc_pre = 1,
-        .argv_pre = &[_][*:0]const u8{"Hello"},
+        .exec = args.exec,
+        .argc_pre = args.argv_pre.len,
+        .argv_pre = args.argv_pre.ptr,
     };
     const payload_size = payloadSize(payload);
 
