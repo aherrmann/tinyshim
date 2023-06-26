@@ -194,9 +194,6 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    try std.io.getStdOut().writer().print("Creating shim at {s}\n", .{args.out_path});
-    try std.io.getStdOut().writer().print("Size of template {}\n", .{shim_templates.shim_template.len});
-
     const payload = Payload{
         .exec = "/bin/echo",
         .argc_pre = 1,
