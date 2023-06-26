@@ -124,7 +124,12 @@ zig_binary(
 run_binary(
     name = "run_mkshim",
     outs = ["shim_generated"],
-    args = ["$(location :shim_generated)"],
+    args = [
+        "/bin/echo",
+        "--prepend",
+        "Hello",
+        "$(location :shim_generated)",
+    ],
     tool = ":mkshim",
 )
 
