@@ -34,6 +34,7 @@ genrule(
     name = "shim_unstripped_output",
     outs = ["shim_unstripped_output.actual"],
     cmd = "$(execpath :shim_unstripped) World! > $(OUTS)",
+    tags = ["manual"],
     tools = [":shim_unstripped"],
 )
 
@@ -136,6 +137,7 @@ run_binary(
         "Hello",
         "$(location :shim_generated)",
     ],
+    tags = ["manual"],
     tool = ":mkshim",
 )
 
