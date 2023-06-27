@@ -27,6 +27,9 @@ zig_configure_binary(
     threaded = "single",
 )
 
+# Note, this test transitions :shim_unstripped into the exec configuration,
+# triggering an additional build of the shim binary.
+# TODO[AH] Consider a zig_test instead to avoid this.
 genrule(
     name = "shim_unstripped_output",
     outs = ["shim_unstripped_output.actual"],
@@ -121,6 +124,9 @@ zig_binary(
     ],
 )
 
+# Note, this test transitions :mkshim into the exec configuration,
+# triggering an additional build of the shim binary.
+# TODO[AH] Consider a zig_test instead to avoid this.
 run_binary(
     name = "run_mkshim",
     outs = ["shim_generated"],
