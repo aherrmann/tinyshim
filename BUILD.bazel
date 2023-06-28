@@ -27,21 +27,18 @@ zig_configure_binary(
     threaded = "single",
 )
 
-# Note, this test transitions :shim_unstripped into the exec configuration,
-# triggering an additional build of the shim binary.
-# TODO[AH] Consider a zig_test instead to avoid this.
-genrule(
-    name = "shim_unstripped_output",
-    outs = ["shim_unstripped_output.actual"],
-    cmd = "$(execpath :shim_unstripped) World! > $(OUTS)",
+zig_test(
+    name = "shim_unstripped_output_test",
+    main = "shim_unstripped_output_test.zig",
     tags = ["manual"],
-    tools = [":shim_unstripped"],
 )
 
-diff_test(
-    name = "shim_unstripped_output_test",
-    file1 = ":shim_output.expected",
-    file2 = ":shim_unstripped_output.actual",
+# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
+sh_test(
+    name = "shim_unstripped_output_test_run",
+    srcs = [":shim_unstripped_output_test"],
+    args = ["$(rootpath :shim_unstripped)"],
+    data = [":shim_unstripped"],
 )
 
 zig_test(
