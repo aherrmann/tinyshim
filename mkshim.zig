@@ -226,16 +226,18 @@ pub fn main() !void {
     };
     const payload_size = payloadSize(payload);
 
+    const shim_template = shim_templates.shim_templates.get("x86_64-linux").?;
+
     var buffer = try allocator.allocBytes(
         @alignOf(*u8),
-        shim_templates.shim_template.len + payload_size,
+        shim_template.len + payload_size,
         @alignOf(*u8),
         @returnAddress(),
     );
     defer allocator.free(buffer);
 
     // Copy the shim template into the output buffer
-    std.mem.copy(u8, buffer, shim_templates.shim_template);
+    std.mem.copy(u8, buffer, shim_template);
 
     // Parse the ELF header from the output buffer
     var buffer_stream = std.io.fixedBufferStream(buffer);
@@ -256,7 +258,7 @@ pub fn main() !void {
     try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
 
     // Encode the payload into the output buffer.
-    try encodePayload(buffer[shim_templates.shim_template.len..], payload_phdr.p_vaddr, payload);
+    try encodePayload(buffer[shim_template.len..], payload_phdr.p_vaddr, payload);
 
     // Write the shim.
     var out_file = try std.fs.cwd().createFile(args.out_path, .{});

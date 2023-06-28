@@ -1,6 +1,5 @@
-load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
-load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_package", "zig_test")
+load(":defs.bzl", "configure_shrink_shims")
 
 zig_test(
     name = "allocator_test",
@@ -68,31 +67,29 @@ zig_binary(
     deps = ["@clap"],
 )
 
-run_binary(
-    name = "shrink_shim",
-    srcs = [":shim_unstripped"],
-    outs = ["shim_template"],
-    args = [
-        "$(location :shim_unstripped)",
-        "$(location :shim_template)",
-        ".payload",
+platform(
+    name = "x86_64-linux",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
     ],
-    tool = ":shrink",
 )
 
-expand_template(
-    name = "shim_templates_zig",
-    out = "shim_templates.zig",
-    data = [":shim_template"],
-    substitutions = {
-        "{shim_template_path}": "shim_template",
-    },
-    template = "shim_templates.zig.tpl",
+configure_shrink_shims(
+    name = "shim_template_files",
+    section_name = ".payload",
+    shim = ":shim_unstripped",
+    shim_prefix = "shim-",
+    shrink = ":shrink",
+    targets = [
+        ":x86_64-linux",
+    ],
+    zig_out = "shim_templates.zig",
 )
 
 zig_package(
     name = "shim_templates",
-    extra_srcs = [":shim_template"],
+    extra_srcs = [":shim_template_files"],
     main = ":shim_templates.zig",
 )
 
