@@ -1,5 +1,4 @@
 load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
-load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_package", "zig_test")
 
@@ -122,31 +121,16 @@ zig_binary(
     ],
 )
 
-# Note, this test transitions :mkshim into the exec configuration,
-# triggering an additional build of the shim binary.
-# TODO[AH] Consider a zig_test instead to avoid this.
-run_binary(
-    name = "run_mkshim",
-    outs = ["shim_generated"],
-    args = [
-        "/bin/echo",
-        "--prepend",
-        "Hello",
-        "$(location :shim_generated)",
-    ],
-    tags = ["manual"],
-    tool = ":mkshim",
-)
-
-genrule(
-    name = "shim_generated_output",
-    outs = ["shim_generated_output.actual"],
-    cmd = "$(execpath :shim_generated) World! > $(OUTS)",
-    tools = [":shim_generated"],
-)
-
-diff_test(
+zig_test(
     name = "shim_generated_output_test",
-    file1 = ":shim_output.expected",
-    file2 = ":shim_generated_output.actual",
+    main = "shim_generated_output_test.zig",
+    tags = ["manual"],
+)
+
+# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
+sh_test(
+    name = "shim_generated_output_test_run",
+    srcs = [":shim_generated_output_test"],
+    args = ["$(rootpath :mkshim)"],
+    data = [":mkshim"],
 )
