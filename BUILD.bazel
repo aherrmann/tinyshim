@@ -64,6 +64,7 @@ zig_binary(
     name = "shrink",
     srcs = ["elf_util.zig"],
     main = "shrink.zig",
+    tags = ["manual"],  # prevent build in target configuration.
     deps = ["@clap"],
 )
 
