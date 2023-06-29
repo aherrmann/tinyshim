@@ -48,6 +48,31 @@ const TmpDir = struct {
     }
 };
 
+fn exec(args: struct {
+    argv: []const []const u8,
+    fail_on_error: bool = true,
+}) !std.ChildProcess.ExecResult {
+    const allocator = std.testing.allocator;
+    const result = try std.ChildProcess.exec(.{
+        .allocator = allocator,
+        .argv = args.argv,
+    });
+    errdefer allocator.free(result.stdout);
+    errdefer allocator.free(result.stderr);
+    if (args.fail_on_error) {
+        std.testing.expectEqual(std.ChildProcess.Term{ .Exited = 0 }, result.term) catch |e| {
+            std.debug.print("\n{s} failed ({})\nstdout: {s}\nstderr: {s}\n", .{
+                args.argv[0],
+                result.term,
+                result.stdout,
+                result.stderr,
+            });
+            return e;
+        };
+    }
+    return result;
+}
+
 test "mkshim generated shim invokes /bin/echo Hello $@" {
     const test_args = try TestArgs.init();
     defer test_args.deinit();
@@ -60,8 +85,7 @@ test "mkshim generated shim invokes /bin/echo Hello $@" {
     const shim_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp.path, "shim" });
     defer allocator.free(shim_path);
 
-    const mkshim_result = try std.ChildProcess.exec(.{
-        .allocator = allocator,
+    const mkshim_result = try exec(.{
         .argv = &[_][]const u8{
             test_args.mkshim,
             "/bin/echo",
@@ -73,17 +97,7 @@ test "mkshim generated shim invokes /bin/echo Hello $@" {
     defer allocator.free(mkshim_result.stdout);
     defer allocator.free(mkshim_result.stderr);
 
-    std.testing.expectEqual(std.ChildProcess.Term{ .Exited = 0 }, mkshim_result.term) catch |e| {
-        std.debug.print("\nmkshim failed ({})\nstdout: {s}\nstderr: {s}\n", .{
-            mkshim_result.term,
-            mkshim_result.stdout,
-            mkshim_result.stderr,
-        });
-        return e;
-    };
-
-    const result = try std.ChildProcess.exec(.{
-        .allocator = allocator,
+    const result = try exec(.{
         .argv = &[_][]const u8{
             shim_path,
             "World!",
@@ -92,14 +106,6 @@ test "mkshim generated shim invokes /bin/echo Hello $@" {
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
-    std.testing.expectEqual(std.ChildProcess.Term{ .Exited = 0 }, result.term) catch |e| {
-        std.debug.print("\nshim failed ({})\nstdout: {s}\nstderr: {s}\n", .{
-            result.term,
-            result.stdout,
-            result.stderr,
-        });
-        return e;
-    };
     try std.testing.expectEqualStrings("Hello World!\n", result.stdout);
 }
 
@@ -115,8 +121,7 @@ test "mkshim can target aarch64-linux" {
     const shim_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp.path, "shim" });
     defer allocator.free(shim_path);
 
-    const mkshim_result = try std.ChildProcess.exec(.{
-        .allocator = allocator,
+    const mkshim_result = try exec(.{
         .argv = &[_][]const u8{
             test_args.mkshim,
             "--target",
@@ -130,21 +135,11 @@ test "mkshim can target aarch64-linux" {
     defer allocator.free(mkshim_result.stdout);
     defer allocator.free(mkshim_result.stderr);
 
-    std.testing.expectEqual(std.ChildProcess.Term{ .Exited = 0 }, mkshim_result.term) catch |e| {
-        std.debug.print("\nmkshim failed ({})\nstdout: {s}\nstderr: {s}\n", .{
-            mkshim_result.term,
-            mkshim_result.stdout,
-            mkshim_result.stderr,
-        });
-        return e;
-    };
-
     // TODO[AH] Infer emulation based on host and target platforms.
     // TODO[AH] Include emulator in a more hermetic way.
     //   At least as a toolchain discovered in a repository rule.
     //   Potentially as a Bazel fetched or built distribution.
-    const result = try std.ChildProcess.exec(.{
-        .allocator = allocator,
+    const result = try exec(.{
         .argv = &[_][]const u8{
             "qemu-aarch64",
             shim_path,
@@ -154,13 +149,5 @@ test "mkshim can target aarch64-linux" {
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
-    std.testing.expectEqual(std.ChildProcess.Term{ .Exited = 0 }, result.term) catch |e| {
-        std.debug.print("\nshim failed ({})\nstdout: {s}\nstderr: {s}\n", .{
-            result.term,
-            result.stdout,
-            result.stderr,
-        });
-        return e;
-    };
     try std.testing.expectEqualStrings("Hello World!\n", result.stdout);
 }
