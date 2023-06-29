@@ -1,26 +1,69 @@
 const std = @import("std");
 
+const TestArgs = struct {
+    mkshim: []const u8,
+
+    pub fn init() !TestArgs {
+        const allocator = std.testing.allocator;
+
+        const args = try std.process.argsAlloc(allocator);
+        defer allocator.free(args);
+
+        if (args.len != 2) {
+            std.debug.print("\nMissing argument <mkshim>\n", .{});
+            return error.MissingArgument;
+        }
+
+        return .{
+            .mkshim = try allocator.dupe(u8, args[1]),
+        };
+    }
+
+    pub fn deinit(self: TestArgs) void {
+        const allocator = std.testing.allocator;
+
+        allocator.free(self.mkshim);
+    }
+};
+
+const TmpDir = struct {
+    dir: std.testing.TmpDir,
+    path: []const u8,
+
+    pub fn init() !TmpDir {
+        const allocator = std.testing.allocator;
+
+        var tmp_dir = std.testing.tmpDir(.{});
+        const tmp_path = try tmp_dir.parent_dir.realpathAlloc(allocator, &tmp_dir.sub_path);
+
+        return .{
+            .dir = tmp_dir,
+            .path = tmp_path,
+        };
+    }
+
+    pub fn deinit(self: *TmpDir) void {
+        defer std.testing.allocator.free(self.path);
+        defer self.dir.cleanup();
+    }
+};
+
 test "mkshim generated shim invokes /bin/echo Hello $@" {
+    const test_args = try TestArgs.init();
+    defer test_args.deinit();
+
+    var tmp = try TmpDir.init();
+    defer tmp.deinit();
+
     const allocator = std.testing.allocator;
 
-    const args = try std.process.argsAlloc(allocator);
-    defer allocator.free(args);
-
-    try std.testing.expectEqual(@as(usize, 2), args.len);
-    const mkshim_path = args[1];
-
-    var tmp_dir = std.testing.tmpDir(.{});
-    defer tmp_dir.cleanup();
-    const tmp_path = try tmp_dir.parent_dir.realpathAlloc(allocator, &tmp_dir.sub_path);
-    defer allocator.free(tmp_path);
-
-    const shim_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "shim" });
+    const shim_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp.path, "shim" });
     defer allocator.free(shim_path);
 
     const mkshim_result = try std.ChildProcess.exec(.{
         .allocator = allocator,
         .argv = &[_][]const u8{
-            mkshim_path,
+            test_args.mkshim,
             "/bin/echo",
             "--prepend",
             "Hello",
