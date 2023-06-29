@@ -33,6 +33,11 @@ jobs:
           key: bazel-cache-${{ hashFiles('**/*.zig', '**/BUILD.bazel', '**/*.bzl', 'WORKSPACE') }}
           restore-keys: bazel-cache-
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install qemu-user
+
       - name: bazel test //...
         env:
           # Bazelisk will download bazel to here, ensure it is cached between runs.

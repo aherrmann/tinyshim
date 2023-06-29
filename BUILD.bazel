@@ -1,7 +1,5 @@
-load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
-load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_package", "zig_test")
+load(":defs.bzl", "configure_shrink_shims")
 
 zig_test(
     name = "allocator_test",
@@ -27,17 +25,18 @@ zig_configure_binary(
     threaded = "single",
 )
 
-genrule(
-    name = "shim_unstripped_output",
-    outs = ["shim_unstripped_output.actual"],
-    cmd = "$(execpath :shim_unstripped) World! > $(OUTS)",
-    tools = [":shim_unstripped"],
+zig_test(
+    name = "shim_unstripped_output_test",
+    main = "shim_unstripped_output_test.zig",
+    tags = ["manual"],
 )
 
-diff_test(
-    name = "shim_unstripped_output_test",
-    file1 = ":shim_output.expected",
-    file2 = ":shim_unstripped_output.actual",
+# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
+sh_test(
+    name = "shim_unstripped_output_test_run",
+    srcs = [":shim_unstripped_output_test"],
+    args = ["$(rootpath :shim_unstripped)"],
+    data = [":shim_unstripped"],
 )
 
 zig_test(
@@ -64,34 +63,42 @@ zig_binary(
     name = "shrink",
     srcs = ["elf_util.zig"],
     main = "shrink.zig",
+    tags = ["manual"],  # prevent build in target configuration.
     deps = ["@clap"],
 )
 
-run_binary(
-    name = "shrink_shim",
-    srcs = [":shim_unstripped"],
-    outs = ["shim_template"],
-    args = [
-        "$(location :shim_unstripped)",
-        "$(location :shim_template)",
-        ".payload",
+platform(
+    name = "aarch64-linux",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
     ],
-    tool = ":shrink",
 )
 
-expand_template(
-    name = "shim_templates_zig",
-    out = "shim_templates.zig",
-    data = [":shim_template"],
-    substitutions = {
-        "{shim_template_path}": "shim_template",
-    },
-    template = "shim_templates.zig.tpl",
+platform(
+    name = "x86_64-linux",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+configure_shrink_shims(
+    name = "shim_template_files",
+    section_name = ".payload",
+    shim = ":shim_unstripped",
+    shim_prefix = "shim-",
+    shrink = ":shrink",
+    targets = [
+        ":aarch64-linux",
+        ":x86_64-linux",
+    ],
+    zig_out = "shim_templates.zig",
 )
 
 zig_package(
     name = "shim_templates",
-    extra_srcs = [":shim_template"],
+    extra_srcs = [":shim_template_files"],
     main = ":shim_templates.zig",
 )
 
@@ -121,27 +128,16 @@ zig_binary(
     ],
 )
 
-run_binary(
-    name = "run_mkshim",
-    outs = ["shim_generated"],
-    args = [
-        "/bin/echo",
-        "--prepend",
-        "Hello",
-        "$(location :shim_generated)",
-    ],
-    tool = ":mkshim",
-)
-
-genrule(
-    name = "shim_generated_output",
-    outs = ["shim_generated_output.actual"],
-    cmd = "$(execpath :shim_generated) World! > $(OUTS)",
-    tools = [":shim_generated"],
-)
-
-diff_test(
+zig_test(
     name = "shim_generated_output_test",
-    file1 = ":shim_output.expected",
-    file2 = ":shim_generated_output.actual",
+    main = "shim_generated_output_test.zig",
+    tags = ["manual"],
+)
+
+# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
+sh_test(
+    name = "shim_generated_output_test_run",
+    srcs = [":shim_generated_output_test"],
+    args = ["$(rootpath :mkshim)"],
+    data = [":mkshim"],
 )

@@ -9,6 +9,7 @@ const Args = struct {
     const exe_name = "mkshim";
     const params = clap.parseParamsComptime(
         \\-h, --help   Display this help and exit.
+        \\--target <STRING>      Create a shim for this target platform.
         \\--prepend <STRING>...  Prepend arguments on the command-line.
         \\<PATH>                 Execute this target executable.
         \\<PATH>                 Where to create the generated shim.
@@ -22,6 +23,7 @@ const Args = struct {
     diag: clap.Diagnostic,
     res: clap.Result(clap.Help, &params, parsers),
 
+    shim_template: []const u8,
     argv_pre: []const [*:0]const u8,
     exec: [:0]const u8,
     out_path: []const u8,
@@ -57,6 +59,14 @@ const Args = struct {
             return error.MissingArgument;
         }
         var allocator: std.mem.Allocator = res.arena.allocator();
+        // TODO[AH] Default to the host platform instead.
+        const target = res.args.target orelse "x86_64-linux";
+        const shim_template = shim_templates.shim_templates.get(target) orelse {
+            try std.io.getStdErr().writer().print("Unsupported target platform {s}\n", .{target});
+            // TODO[AH] Print the list of supported target platforms.
+            try usage();
+            return error.InvalidArgument;
+        };
         var argv_pre = try allocator.alloc([*:0]const u8, res.args.prepend.len);
         for (res.args.prepend) |arg, i| {
             argv_pre[i] = try allocator.dupeZ(u8, arg);
@@ -66,6 +76,7 @@ const Args = struct {
         return Args{
             .diag = diag,
             .res = res,
+            .shim_template = shim_template,
             .argv_pre = argv_pre,
             .exec = exec,
             .out_path = out_path,
@@ -226,16 +237,18 @@ pub fn main() !void {
     };
     const payload_size = payloadSize(payload);
 
+    const shim_template = args.shim_template;
+
     var buffer = try allocator.allocBytes(
         @alignOf(*u8),
-        shim_templates.shim_template.len + payload_size,
+        shim_template.len + payload_size,
         @alignOf(*u8),
         @returnAddress(),
     );
     defer allocator.free(buffer);
 
     // Copy the shim template into the output buffer
-    std.mem.copy(u8, buffer, shim_templates.shim_template);
+    std.mem.copy(u8, buffer, shim_template);
 
     // Parse the ELF header from the output buffer
     var buffer_stream = std.io.fixedBufferStream(buffer);
@@ -256,7 +269,7 @@ pub fn main() !void {
     try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
 
     // Encode the payload into the output buffer.
-    try encodePayload(buffer[shim_templates.shim_template.len..], payload_phdr.p_vaddr, payload);
+    try encodePayload(buffer[shim_template.len..], payload_phdr.p_vaddr, payload);
 
     // Write the shim.
     var out_file = try std.fs.cwd().createFile(args.out_path, .{});
