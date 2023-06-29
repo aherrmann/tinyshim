@@ -68,6 +68,14 @@ zig_binary(
 )
 
 platform(
+    name = "aarch64-linux",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
     name = "x86_64-linux",
     constraint_values = [
         "@platforms//os:linux",
@@ -82,6 +90,7 @@ configure_shrink_shims(
     shim_prefix = "shim-",
     shrink = ":shrink",
     targets = [
+        ":aarch64-linux",
         ":x86_64-linux",
     ],
     zig_out = "shim_templates.zig",
