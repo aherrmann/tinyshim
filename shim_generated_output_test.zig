@@ -73,6 +73,56 @@ fn exec(args: struct {
     return result;
 }
 
+test "mkshim --help lists supported platforms" {
+    const test_args = try TestArgs.init();
+    defer test_args.deinit();
+
+    const allocator = std.testing.allocator;
+
+    const result = try exec(.{
+        .argv = &[_][]const u8{
+            test_args.mkshim,
+            "--help",
+        },
+    });
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    const offset = std.mem.indexOf(u8, result.stderr, "Supported target platforms:\n").?;
+    try std.testing.expectStringStartsWith(result.stderr[offset..],
+        \\Supported target platforms:
+        \\  x86_64-linux
+        \\  aarch64-linux
+    );
+}
+
+test "mkshim lists supported platforms on invalid platform" {
+    const test_args = try TestArgs.init();
+    defer test_args.deinit();
+
+    const allocator = std.testing.allocator;
+
+    const result = try exec(.{
+        .fail_on_error = false,
+        .argv = &[_][]const u8{
+            test_args.mkshim,
+            "--target",
+            "does-not-exist",
+            "/no-such-file",
+            "/no-such-file",
+        },
+    });
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    const offset = std.mem.indexOf(u8, result.stderr, "Supported target platforms:\n").?;
+    try std.testing.expectStringStartsWith(result.stderr[offset..],
+        \\Supported target platforms:
+        \\  x86_64-linux
+        \\  aarch64-linux
+    );
+}
+
 test "mkshim generated shim invokes /bin/echo Hello $@" {
     const test_args = try TestArgs.init();
     defer test_args.deinit();
