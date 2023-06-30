@@ -5,6 +5,22 @@ const shim_templates = @import("shim_templates");
 const SimpleBumpAllocator = @import("allocator.zig").SimpleBumpAllocator;
 const Payload = @import("payload.zig").Payload;
 
+const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
+
+const supported_targets = supported: {
+    var size = 0;
+    for (shim_templates.shim_templates.kvs) |kv| {
+        size += "  ".len + kv.key.len + "\n".len;
+    }
+    var result: [size]u8 = undefined;
+    var offset: usize = 0;
+    for (shim_templates.shim_templates.kvs) |kv| {
+        std.mem.copy(u8, result[offset..], "  " ++ kv.key ++ "\n");
+        offset += "  ".len + kv.key.len + "\n".len;
+    }
+    break :supported result;
+};
+
 const Args = struct {
     const exe_name = "mkshim";
     const params = clap.parseParamsComptime(
@@ -46,6 +62,9 @@ const Args = struct {
         if (res.args.help) {
             try usage();
             try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+            try std.io.getStdErr().writer().print("\nSupported target platforms:\n{s}", .{
+                supported_targets,
+            });
             return null;
         }
         if (res.positionals.len < 2) {
@@ -59,12 +78,13 @@ const Args = struct {
             return error.MissingArgument;
         }
         var allocator: std.mem.Allocator = res.arena.allocator();
-        // TODO[AH] Default to the host platform instead.
-        const target = res.args.target orelse "x86_64-linux";
+        const target = res.args.target orelse native_target;
         const shim_template = shim_templates.shim_templates.get(target) orelse {
-            try std.io.getStdErr().writer().print("Unsupported target platform {s}\n", .{target});
-            // TODO[AH] Print the list of supported target platforms.
-            try usage();
+            const msg = "Unsupported target platform {s}\nSupported target platforms:\n{s}";
+            try std.io.getStdErr().writer().print(msg, .{
+                target,
+                supported_targets,
+            });
             return error.InvalidArgument;
         };
         var argv_pre = try allocator.alloc([*:0]const u8, res.args.prepend.len);
