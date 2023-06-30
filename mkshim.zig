@@ -59,8 +59,8 @@ const Args = struct {
             return error.MissingArgument;
         }
         var allocator: std.mem.Allocator = res.arena.allocator();
-        // TODO[AH] Default to the host platform instead.
-        const target = res.args.target orelse "x86_64-linux";
+        const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
+        const target = res.args.target orelse native_target;
         const shim_template = shim_templates.shim_templates.get(target) orelse {
             try std.io.getStdErr().writer().print("Unsupported target platform {s}\n", .{target});
             // TODO[AH] Print the list of supported target platforms.
