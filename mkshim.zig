@@ -62,9 +62,20 @@ const Args = struct {
         const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
         const target = res.args.target orelse native_target;
         const shim_template = shim_templates.shim_templates.get(target) orelse {
-            try std.io.getStdErr().writer().print("Unsupported target platform {s}\n", .{target});
-            // TODO[AH] Print the list of supported target platforms.
-            try usage();
+            const supported_platforms = comptime supported: {
+                var size = 0;
+                for (shim_templates.shim_templates.kvs) |kv| {
+                    size += "  ".len + kv.key.len + "\n".len;
+                }
+                var result: [size]u8 = undefined;
+                var offset: usize = 0;
+                for (shim_templates.shim_templates.kvs) |kv| {
+                    std.mem.copy(u8, result[offset..], "  " ++ kv.key ++ "\n");
+                    offset += "  ".len + kv.key.len + "\n".len;
+                }
+                break :supported result;
+            };
+            try std.io.getStdErr().writer().print("Unsupported target platform {s}\nSupported platforms:\n{s}", .{ target, supported_platforms });
             return error.InvalidArgument;
         };
         var argv_pre = try allocator.alloc([*:0]const u8, res.args.prepend.len);
