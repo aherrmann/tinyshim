@@ -115,6 +115,11 @@ const Args = struct {
     }
 };
 
+const Bitwidth = enum {
+    @"32",
+    @"64",
+};
+
 fn payloadSize(payload: Payload) usize {
     const pointer_align = @alignOf(*u8);
     const pointer_size = @alignOf(*u8);
@@ -242,6 +247,47 @@ test "encodePayload on non-empty payload" {
     try std.testing.expectEqualSlices(u8, "World!\n"[0..8], buffer[argv_pre_value_offset + 6 .. argv_pre_value_offset + 6 + 8]);
 }
 
+fn generateShim(
+    allocator: std.mem.Allocator,
+    comptime bitwidth: Bitwidth,
+    payload: Payload,
+    template: []const u8,
+    header: std.elf.Header,
+) ![]u8 {
+    _ = bitwidth;
+
+    const payload_size = payloadSize(payload);
+
+    var buffer = try allocator.allocBytes(
+        @alignOf(*u8),
+        template.len + payload_size,
+        @alignOf(*u8),
+        @returnAddress(),
+    );
+    var buffer_stream = std.io.fixedBufferStream(buffer);
+
+    std.mem.copy(u8, buffer, template);
+
+    // Parse the payload segment's Phdr.
+    // TODO[AH] Support for 32-bit.
+    // TODO[AH] Support for endiannes.
+    var payload_phdr: std.elf.Elf64_Phdr = undefined;
+    const payload_phdr_offset = header.phoff + @sizeOf(@TypeOf(payload_phdr)) * (header.phnum - 1);
+    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
+    try buffer_stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
+
+    // Update the payload file and memory size in the output buffer.
+    payload_phdr.p_filesz = payload_size;
+    payload_phdr.p_memsz = payload_size;
+    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
+    try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
+
+    // Encode the payload into the output buffer.
+    try encodePayload(buffer[template.len..], payload_phdr.p_vaddr, payload);
+
+    return buffer;
+}
+
 pub fn main() !void {
     var args = (try Args.parse()) orelse return;
     defer args.deinit();
@@ -255,46 +301,22 @@ pub fn main() !void {
         .argc_pre = args.argv_pre.len,
         .argv_pre = args.argv_pre.ptr,
     };
-    const payload_size = payloadSize(payload);
 
-    const shim_template = args.shim_template;
+    // Load the shim template.
+    const template = args.shim_template;
+    var template_stream = std.io.fixedBufferStream(template);
+    const template_header = try std.elf.Header.read(&template_stream);
 
-    var buffer = try allocator.allocBytes(
-        @alignOf(*u8),
-        shim_template.len + payload_size,
-        @alignOf(*u8),
-        @returnAddress(),
-    );
-    defer allocator.free(buffer);
-
-    // Copy the shim template into the output buffer
-    std.mem.copy(u8, buffer, shim_template);
-
-    // Parse the ELF header from the output buffer
-    var buffer_stream = std.io.fixedBufferStream(buffer);
-    const elf_header = try std.elf.Header.read(&buffer_stream);
-
-    // Parse the payload segment's Phdr.
-    // TODO[AH] Support for 32-bit.
-    // TODO[AH] Support for endiannes.
-    var payload_phdr: std.elf.Elf64_Phdr = undefined;
-    const payload_phdr_offset = elf_header.phoff + @sizeOf(@TypeOf(payload_phdr)) * (elf_header.phnum - 1);
-    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
-    try buffer_stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
-
-    // Update the payload file and memory size in the output buffer.
-    payload_phdr.p_filesz = payload_size;
-    payload_phdr.p_memsz = payload_size;
-    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
-    try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
-
-    // Encode the payload into the output buffer.
-    try encodePayload(buffer[shim_template.len..], payload_phdr.p_vaddr, payload);
+    const shim = try if (template_header.is_64)
+        generateShim(allocator, .@"64", payload, template, template_header)
+    else
+        generateShim(allocator, .@"32", payload, template, template_header);
+    defer allocator.free(shim);
 
     // Write the shim.
     var out_file = try std.fs.cwd().createFile(args.out_path, .{});
     defer out_file.close();
-    try out_file.writeAll(buffer);
+    try out_file.writeAll(shim);
 
     // Make the shim file executable.
     switch (builtin.os.tag) {
