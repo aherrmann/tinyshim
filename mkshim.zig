@@ -120,13 +120,30 @@ const Bitwidth = enum {
     @"64",
 };
 
-fn payloadSize(payload: Payload) usize {
-    const pointer_align = @alignOf(*u8);
-    const pointer_size = @alignOf(*u8);
+fn pointerSize(bitwidth: Bitwidth) usize {
+    return switch (bitwidth) {
+        .@"32" => 4,
+        .@"64" => 8,
+    };
+}
+
+fn pointerAlignment(bitwidth: Bitwidth) usize {
+    return switch (bitwidth) {
+        .@"32" => 4,
+        .@"64" => 8,
+    };
+}
+
+fn payloadSize(bitwidth: Bitwidth, payload: Payload) usize {
     var result: usize = 0;
 
+    const pointer_size = pointerSize(bitwidth);
+    const pointer_align = pointerAlignment(bitwidth);
+
     // Payload struct
-    result += std.mem.alignForward(@sizeOf(Payload), pointer_align);
+    result += pointer_size; // exec
+    result += pointer_size; // argc_pre
+    result += pointer_size; // argv_pre
 
     // argv_pre pointer array
     result += payload.argc_pre * pointer_size;
@@ -145,24 +162,24 @@ fn payloadSize(payload: Payload) usize {
 
 test "payloadSize on empty payload" {
     const payload = Payload{
-        .exec = "",
-        .argc_pre = 0,
-        .argv_pre = &[_][*:0]const u8{},
+        .exec = "", // 4/8 + 1
+        .argc_pre = 0, // 4/8
+        .argv_pre = &[_][*:0]const u8{}, // 4/8 + 0
     };
 
-    const expectedSize = std.mem.alignForward(@sizeOf(Payload) + 1, @alignOf(*u8));
-    try std.testing.expectEqual(expectedSize, payloadSize(payload));
+    try std.testing.expectEqual(4 + 4 + 4 + std.mem.alignForward(1, 4), payloadSize(.@"32", payload));
+    try std.testing.expectEqual(8 + 8 + 8 + std.mem.alignForward(1, 8), payloadSize(.@"64", payload));
 }
 
 test "payloadSize on non-empty payload" {
     const payload = Payload{
-        .exec = "/bin/echo",
-        .argc_pre = 2,
-        .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" },
+        .exec = "/bin/echo", // 4/8 + 10
+        .argc_pre = 2, // 4/8
+        .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" }, // 4/8 + 2*4/8 + 6 + 8
     };
 
-    const expectedSize = std.mem.alignForward(@sizeOf(Payload) + 2 * @sizeOf(*u8) + 10 + 6 + 8, @alignOf(*u8));
-    try std.testing.expectEqual(expectedSize, payloadSize(payload));
+    try std.testing.expectEqual(4 + 4 + 4 + 2 * 4 + std.mem.alignForward(10 + 6 + 8, 4), payloadSize(.@"32", payload));
+    try std.testing.expectEqual(8 + 8 + 8 + 2 * 8 + std.mem.alignForward(10 + 6 + 8, 8), payloadSize(.@"64", payload));
 }
 
 fn encodePayload(buffer: []u8, offset: usize, payload: Payload) !void {
@@ -194,7 +211,7 @@ test "encodePayload on empty payload" {
         .argv_pre = &[_][*:0]const u8{},
     };
 
-    var buffer = try allocator.alloc(u8, payloadSize(payload));
+    var buffer = try allocator.alloc(u8, payloadSize(.@"64", payload));
     defer allocator.free(buffer);
 
     const offset: usize = 8 * @alignOf(*u8);
@@ -221,7 +238,7 @@ test "encodePayload on non-empty payload" {
         .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" },
     };
 
-    var buffer = try allocator.alloc(u8, payloadSize(payload));
+    var buffer = try allocator.alloc(u8, payloadSize(.@"64", payload));
     defer allocator.free(buffer);
 
     const offset: usize = 8 * @alignOf(*u8);
@@ -256,7 +273,7 @@ fn generateShim(
 ) ![]u8 {
     _ = bitwidth;
 
-    const payload_size = payloadSize(payload);
+    const payload_size = payloadSize(.@"64", payload);
 
     var buffer = try allocator.allocBytes(
         @alignOf(*u8),
