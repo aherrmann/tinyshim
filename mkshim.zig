@@ -373,8 +373,6 @@ fn generateShim(
     template: []const u8,
     header: std.elf.Header,
 ) ![]u8 {
-    _ = bitwidth;
-
     const payload_size = payloadSize(.@"64", payload);
 
     var buffer = try allocator.allocBytes(
@@ -388,21 +386,25 @@ fn generateShim(
     std.mem.copy(u8, buffer, template);
 
     // Parse the payload segment's Phdr.
-    // TODO[AH] Support for 32-bit.
     // TODO[AH] Support for endiannes.
-    var payload_phdr: std.elf.Elf64_Phdr = undefined;
-    const payload_phdr_offset = header.phoff + @sizeOf(@TypeOf(payload_phdr)) * (header.phnum - 1);
+    const Phdr = switch (bitwidth) {
+        .@"32" => std.elf.Elf32_Phdr,
+        .@"64" => std.elf.Elf64_Phdr,
+    };
+    var payload_phdr: Phdr = undefined;
+    const payload_phdr_offset = header.phoff + @sizeOf(Phdr) * (header.phnum - 1);
     try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
     try buffer_stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
 
     // Update the payload file and memory size in the output buffer.
-    payload_phdr.p_filesz = payload_size;
-    payload_phdr.p_memsz = payload_size;
+    const size_type = SizeType(bitwidth);
+    payload_phdr.p_filesz = @intCast(size_type, payload_size);
+    payload_phdr.p_memsz = @intCast(size_type, payload_size);
     try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
     try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
 
     // Encode the payload into the output buffer.
-    try encodePayload(.@"64", buffer[template.len..], payload_phdr.p_vaddr, payload);
+    try encodePayload(bitwidth, buffer[template.len..], payload_phdr.p_vaddr, payload);
 
     return buffer;
 }
