@@ -91,8 +91,8 @@ test "mkshim --help lists supported platforms" {
     const offset = std.mem.indexOf(u8, result.stderr, "Supported target platforms:\n").?;
     try std.testing.expectStringStartsWith(result.stderr[offset..],
         \\Supported target platforms:
+        \\  ppc-linux
         \\  x86_32-linux
-        \\  x86_64-linux
     );
 }
 
@@ -118,8 +118,8 @@ test "mkshim lists supported platforms on invalid platform" {
     const offset = std.mem.indexOf(u8, result.stderr, "Supported target platforms:\n").?;
     try std.testing.expectStringStartsWith(result.stderr[offset..],
         \\Supported target platforms:
+        \\  ppc-linux
         \\  x86_32-linux
-        \\  x86_64-linux
     );
 }
 
