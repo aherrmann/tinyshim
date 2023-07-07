@@ -2,7 +2,6 @@ const builtin = @import("builtin");
 const clap = @import("clap");
 const std = @import("std");
 const shim_templates = @import("shim_templates");
-const SimpleBumpAllocator = @import("allocator.zig").SimpleBumpAllocator;
 const Payload = @import("payload.zig").Payload;
 
 const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
@@ -189,47 +188,66 @@ test "payloadSize on non-empty payload" {
     try std.testing.expectEqual(8 + 8 + 8 + 2 * 8 + std.mem.alignForward(10 + 6 + 8, 8), payloadSize(.@"64", payload));
 }
 
-fn encodePayload(comptime bitwidth: Bitwidth, buffer: []u8, offset: usize, payload: Payload) !void {
+fn streamAdvance(stream: anytype, size: usize) !u64 {
+    const offset = try stream.seekableStream().getPos();
+    try stream.seekableStream().seekBy(@intCast(i64, size));
+    return offset;
+}
+
+fn streamWriteInt(stream: anytype, comptime T: type, value: T) !void {
+    // TODO[AH] Support non-native endian.
+    try stream.writer().writeIntNative(T, value);
+}
+
+fn streamWriteIntAt(stream: anytype, comptime T: type, pos: u64, value: T) !void {
+    const offset = try stream.seekableStream().getPos();
+    try stream.seekableStream().seekTo(pos);
+    // TODO[AH] Support non-native endian.
+    try stream.writer().writeIntNative(T, value);
+    try stream.seekableStream().seekTo(offset);
+}
+
+fn streamWriteZ(stream: anytype, source: [*:0]const u8) !u64 {
+    const offset = try stream.seekableStream().getPos();
+    try stream.writer().writeAll(std.mem.sliceTo(source, 0));
+    try stream.writer().writeByte(0);
+    return offset;
+}
+
+fn encodePayload(comptime bitwidth: Bitwidth, stream: anytype, offset: usize, payload: Payload) !void {
     const size_type = SizeType(bitwidth);
     const pointer_size = pointerSize(bitwidth);
 
-    var buffer_allocator = SimpleBumpAllocator.init(buffer);
+    const stream_offset = try stream.seekableStream().getPos();
 
-    var encoded_payload_exec = try buffer_allocator.alloc(u8, pointer_size);
-    var encoded_payload_argc_pre = try buffer_allocator.alloc(u8, pointer_size);
-    var encoded_payload_argv_pre = try buffer_allocator.alloc(u8, pointer_size);
+    const payload_exec_offset = try streamAdvance(stream, pointer_size);
+    try streamWriteInt(stream, size_type, @intCast(size_type, payload.argc_pre));
+    const payload_argv_pre_offset = try streamAdvance(stream, pointer_size);
 
-    // TODO[AH] Support non-native endian.
-
-    std.mem.writeIntSliceNative(
+    var argv_pre_offset = try streamAdvance(stream, payload.argc_pre * pointer_size);
+    try streamWriteIntAt(
+        stream,
         size_type,
-        encoded_payload_argc_pre,
-        @intCast(size_type, payload.argc_pre),
+        payload_argv_pre_offset,
+        @intCast(size_type, argv_pre_offset - stream_offset + offset),
     );
 
-    var encoded_argv_pre = try buffer_allocator.alloc(u8, payload.argc_pre * pointer_size);
-    std.mem.writeIntSliceNative(
+    const exec_offset = try streamWriteZ(stream, payload.exec);
+    try streamWriteIntAt(
+        stream,
         size_type,
-        encoded_payload_argv_pre,
-        @intCast(size_type, @ptrToInt(encoded_argv_pre.ptr) - @ptrToInt(buffer.ptr) + offset),
+        payload_exec_offset,
+        @intCast(size_type, exec_offset - stream_offset + offset),
     );
-
-    var encoded_exec = try buffer_allocator.allocSentinel(u8, std.mem.sliceTo(payload.exec, 0).len, 0);
-    std.mem.writeIntSliceNative(
-        size_type,
-        encoded_payload_exec,
-        @intCast(size_type, @ptrToInt(encoded_exec.ptr) - @ptrToInt(buffer.ptr) + offset),
-    );
-    std.mem.copy(u8, encoded_exec, std.mem.sliceTo(payload.exec, 0));
 
     for (payload.argv_pre[0..payload.argc_pre]) |arg, i| {
-        var encoded_arg = try buffer_allocator.allocSentinel(u8, std.mem.sliceTo(arg, 0).len, 0);
-        std.mem.writeIntSliceNative(
+        const arg_offset = try streamWriteZ(stream, arg);
+        try streamWriteIntAt(
+            stream,
             size_type,
-            encoded_argv_pre[i * pointer_size .. (i + 1) * pointer_size],
-            @intCast(size_type, @ptrToInt(encoded_arg.ptr) - @ptrToInt(buffer.ptr) + offset),
+            argv_pre_offset + i * pointer_size,
+            @intCast(size_type, arg_offset - stream_offset + offset),
         );
-        std.mem.copy(u8, encoded_arg, std.mem.sliceTo(arg, 0));
     }
 }
 
@@ -249,8 +267,9 @@ fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth) !void {
     var buffer = try allocator.alloc(u8, payloadSize(bitwidth, payload));
     defer allocator.free(buffer);
 
+    var stream = std.io.fixedBufferStream(buffer);
     const offset: usize = 8 * pointer_align;
-    try encodePayload(bitwidth, buffer, offset, payload);
+    try encodePayload(bitwidth, &stream, offset, payload);
 
     const payload_size = 3 * pointer_size;
     const payload_exec_offset = 0;
@@ -306,8 +325,9 @@ fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth) !void {
     var buffer = try allocator.alloc(u8, payloadSize(bitwidth, payload));
     defer allocator.free(buffer);
 
+    var stream = std.io.fixedBufferStream(buffer);
     const offset: usize = 8 * pointer_align;
-    try encodePayload(bitwidth, buffer, offset, payload);
+    try encodePayload(bitwidth, &stream, offset, payload);
 
     const payload_size = 3 * pointer_size;
     const payload_exec_offset = 0;
@@ -381,9 +401,9 @@ fn generateShim(
         @alignOf(*u8),
         @returnAddress(),
     );
-    var buffer_stream = std.io.fixedBufferStream(buffer);
+    var stream = std.io.fixedBufferStream(buffer);
 
-    std.mem.copy(u8, buffer, template);
+    try stream.writer().writeAll(template);
 
     // Parse the payload segment's Phdr.
     // TODO[AH] Support for endiannes.
@@ -393,18 +413,19 @@ fn generateShim(
     };
     var payload_phdr: Phdr = undefined;
     const payload_phdr_offset = header.phoff + @sizeOf(Phdr) * (header.phnum - 1);
-    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
-    try buffer_stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
+    try stream.seekableStream().seekTo(payload_phdr_offset);
+    try stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
 
     // Update the payload file and memory size in the output buffer.
     const size_type = SizeType(bitwidth);
     payload_phdr.p_filesz = @intCast(size_type, payload_size);
     payload_phdr.p_memsz = @intCast(size_type, payload_size);
-    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
-    try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
+    try stream.seekableStream().seekTo(payload_phdr_offset);
+    try stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
 
     // Encode the payload into the output buffer.
-    try encodePayload(bitwidth, buffer[template.len..], payload_phdr.p_vaddr, payload);
+    try stream.seekableStream().seekTo(template.len);
+    try encodePayload(bitwidth, &stream, payload_phdr.p_vaddr, payload);
 
     return buffer;
 }
