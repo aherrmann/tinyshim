@@ -27,16 +27,9 @@ zig_configure_binary(
 
 zig_test(
     name = "shim_unstripped_output_test",
-    main = "shim_unstripped_output_test.zig",
-    tags = ["manual"],
-)
-
-# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
-sh_test(
-    name = "shim_unstripped_output_test_run",
-    srcs = [":shim_unstripped_output_test"],
     args = ["$(rootpath :shim_unstripped)"],
     data = [":shim_unstripped"],
+    main = "shim_unstripped_output_test.zig",
 )
 
 zig_test(
@@ -47,16 +40,9 @@ zig_test(
 zig_test(
     name = "shim_layout_test",
     srcs = ["elf_util.zig"],
-    main = "shim_layout_test.zig",
-    tags = ["manual"],
-)
-
-# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
-sh_test(
-    name = "shim_layout_test_run",
-    srcs = [":shim_layout_test"],
     args = ["$(rootpath :shim_unstripped)"],
     data = [":shim_unstripped"],
+    main = "shim_layout_test.zig",
 )
 
 zig_binary(
@@ -148,14 +134,7 @@ zig_binary(
 
 zig_test(
     name = "shim_generated_output_test",
-    main = "shim_generated_output_test.zig",
-    tags = ["manual"],
-)
-
-# TODO[AH] Remove this once `zig_test` supports the `data` attribute.
-sh_test(
-    name = "shim_generated_output_test_run",
-    srcs = [":shim_generated_output_test"],
     args = ["$(rootpath :mkshim)"],
     data = [":mkshim"],
+    main = "shim_generated_output_test.zig",
 )
