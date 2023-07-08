@@ -393,7 +393,7 @@ fn generateShim(
     template: []const u8,
     header: std.elf.Header,
 ) ![]u8 {
-    const payload_size = payloadSize(.@"64", payload);
+    const payload_size = payloadSize(bitwidth, payload);
 
     var buffer = try allocator.allocBytes(
         @alignOf(*u8),
