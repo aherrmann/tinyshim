@@ -1,0 +1,28 @@
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_test")
+
+zig_test(
+    name = "mkshim_test",
+    main = "mkshim.zig",
+    deps = [
+        "//shim/linux:payload",
+        "//shim/linux:shim_templates",
+        "@clap",
+    ],
+)
+
+zig_binary(
+    name = "mkshim",
+    main = "mkshim.zig",
+    deps = [
+        "//shim/linux:payload",
+        "//shim/linux:shim_templates",
+        "@clap",
+    ],
+)
+
+zig_test(
+    name = "shim_generated_output_test",
+    args = ["$(rootpath :mkshim)"],
+    data = [":mkshim"],
+    main = "shim_generated_output_test.zig",
+)

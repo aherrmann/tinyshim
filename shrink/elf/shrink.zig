@@ -1,6 +1,6 @@
 const clap = @import("clap");
 const std = @import("std");
-const elf_util = @import("elf_util.zig");
+const elf_util = @import("elf_util");
 
 const Args = struct {
     const exe_name = "shrink";

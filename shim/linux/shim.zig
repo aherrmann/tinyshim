@@ -1,7 +1,7 @@
 const std = @import("std");
-const StackOrPageBuffer = @import("allocator.zig").StackOrPageBuffer;
-const SimpleBumpAllocator = @import("allocator.zig").SimpleBumpAllocator;
-const Payload = @import("payload.zig").Payload;
+const StackOrPageBuffer = @import("allocator").StackOrPageBuffer;
+const SimpleBumpAllocator = @import("allocator").SimpleBumpAllocator;
+const Payload = @import("payload").Payload;
 
 extern const payload_start: *const anyopaque;
 const payload = @ptrCast(*const Payload, @alignCast(8, &payload_start));

@@ -2,7 +2,8 @@ const builtin = @import("builtin");
 const clap = @import("clap");
 const std = @import("std");
 const shim_templates = @import("shim_templates");
-const Payload = @import("payload.zig").Payload;
+// TODO[AH] Factor out ELF Payload encoding
+const Payload = @import("payload").Payload;
 
 const native_endian = builtin.cpu.arch.endian();
 const foreign_endian = switch (native_endian) {
