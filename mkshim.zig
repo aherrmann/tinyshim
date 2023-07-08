@@ -4,6 +4,7 @@ const std = @import("std");
 const shim_templates = @import("shim_templates");
 const Payload = @import("payload.zig").Payload;
 
+const native_endian = builtin.cpu.arch.endian();
 const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
 
 const supported_targets = supported: {
@@ -194,16 +195,14 @@ fn streamAdvance(stream: anytype, size: usize) !u64 {
     return offset;
 }
 
-fn streamWriteInt(stream: anytype, comptime T: type, value: T) !void {
-    // TODO[AH] Support non-native endian.
-    try stream.writer().writeIntNative(T, value);
+fn streamWriteInt(stream: anytype, comptime T: type, value: T, endian: std.builtin.Endian) !void {
+    try stream.writer().writeInt(T, value, endian);
 }
 
-fn streamWriteIntAt(stream: anytype, comptime T: type, pos: u64, value: T) !void {
+fn streamWriteIntAt(stream: anytype, comptime T: type, pos: u64, value: T, endian: std.builtin.Endian) !void {
     const offset = try stream.seekableStream().getPos();
     try stream.seekableStream().seekTo(pos);
-    // TODO[AH] Support non-native endian.
-    try stream.writer().writeIntNative(T, value);
+    try stream.writer().writeInt(T, value, endian);
     try stream.seekableStream().seekTo(offset);
 }
 
@@ -214,14 +213,14 @@ fn streamWriteZ(stream: anytype, source: [*:0]const u8) !u64 {
     return offset;
 }
 
-fn encodePayload(comptime bitwidth: Bitwidth, stream: anytype, offset: usize, payload: Payload) !void {
+fn encodePayload(comptime bitwidth: Bitwidth, endian: std.builtin.Endian, stream: anytype, offset: usize, payload: Payload) !void {
     const size_type = SizeType(bitwidth);
     const pointer_size = pointerSize(bitwidth);
 
     const stream_offset = try stream.seekableStream().getPos();
 
     const payload_exec_offset = try streamAdvance(stream, pointer_size);
-    try streamWriteInt(stream, size_type, @intCast(size_type, payload.argc_pre));
+    try streamWriteInt(stream, size_type, @intCast(size_type, payload.argc_pre), endian);
     const payload_argv_pre_offset = try streamAdvance(stream, pointer_size);
 
     var argv_pre_offset = try streamAdvance(stream, payload.argc_pre * pointer_size);
@@ -230,6 +229,7 @@ fn encodePayload(comptime bitwidth: Bitwidth, stream: anytype, offset: usize, pa
         size_type,
         payload_argv_pre_offset,
         @intCast(size_type, argv_pre_offset - stream_offset + offset),
+        endian,
     );
 
     const exec_offset = try streamWriteZ(stream, payload.exec);
@@ -238,6 +238,7 @@ fn encodePayload(comptime bitwidth: Bitwidth, stream: anytype, offset: usize, pa
         size_type,
         payload_exec_offset,
         @intCast(size_type, exec_offset - stream_offset + offset),
+        endian,
     );
 
     for (payload.argv_pre[0..payload.argc_pre]) |arg, i| {
@@ -247,11 +248,12 @@ fn encodePayload(comptime bitwidth: Bitwidth, stream: anytype, offset: usize, pa
             size_type,
             argv_pre_offset + i * pointer_size,
             @intCast(size_type, arg_offset - stream_offset + offset),
+            endian,
         );
     }
 }
 
-fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth) !void {
+fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.Endian) !void {
     const size_type = SizeType(bitwidth);
     const pointer_size = pointerSize(bitwidth);
     const pointer_align = pointerAlignment(bitwidth);
@@ -269,10 +271,11 @@ fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth) !void {
 
     var stream = std.io.fixedBufferStream(buffer);
     const offset: usize = 8 * pointer_align;
-    try encodePayload(bitwidth, &stream, offset, payload);
+    try encodePayload(bitwidth, endian, &stream, offset, payload);
 
     const payload_size = 3 * pointer_size;
     const payload_exec_offset = 0;
+    // TODO[AH] handle non-native endian
     try std.testing.expectEqualSlices(
         u8,
         &std.mem.toBytes(@intCast(size_type, offset + payload_size)),
@@ -302,14 +305,14 @@ fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth) !void {
 }
 
 test "encodePayload on empty payload at 32 bit" {
-    try testEncodePayloadEmpty(.@"32");
+    try testEncodePayloadEmpty(.@"32", native_endian);
 }
 
 test "encodePayload on empty payload at 64 bit" {
-    try testEncodePayloadEmpty(.@"64");
+    try testEncodePayloadEmpty(.@"64", native_endian);
 }
 
-fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth) !void {
+fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.Endian) !void {
     const size_type = SizeType(bitwidth);
     const pointer_size = pointerSize(bitwidth);
     const pointer_align = pointerAlignment(bitwidth);
@@ -327,11 +330,12 @@ fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth) !void {
 
     var stream = std.io.fixedBufferStream(buffer);
     const offset: usize = 8 * pointer_align;
-    try encodePayload(bitwidth, &stream, offset, payload);
+    try encodePayload(bitwidth, endian, &stream, offset, payload);
 
     const payload_size = 3 * pointer_size;
     const payload_exec_offset = 0;
     const exec_offset = payload_size + 2 * pointer_size;
+    // TODO[AH] handle non-native endian
     try std.testing.expectEqualSlices(
         u8,
         &std.mem.toBytes(@intCast(size_type, offset + exec_offset)),
@@ -379,11 +383,11 @@ fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth) !void {
 }
 
 test "encodePayload on non-empty payload at 32 bit" {
-    try testEncodePayloadNonEmpty(.@"32");
+    try testEncodePayloadNonEmpty(.@"32", native_endian);
 }
 
 test "encodePayload on non-empty payload at 64 bit" {
-    try testEncodePayloadNonEmpty(.@"64");
+    try testEncodePayloadNonEmpty(.@"64", native_endian);
 }
 
 fn generateShim(
@@ -393,7 +397,10 @@ fn generateShim(
     template: []const u8,
     header: std.elf.Header,
 ) ![]u8 {
+    std.debug.assert(header.is_64 == (bitwidth == .@"64"));
     const payload_size = payloadSize(bitwidth, payload);
+    const endian = header.endian;
+    const need_bswap = endian != native_endian;
 
     var buffer = try allocator.allocBytes(
         @alignOf(*u8),
@@ -406,7 +413,6 @@ fn generateShim(
     try stream.writer().writeAll(template);
 
     // Parse the payload segment's Phdr.
-    // TODO[AH] Support for endiannes.
     const Phdr = switch (bitwidth) {
         .@"32" => std.elf.Elf32_Phdr,
         .@"64" => std.elf.Elf64_Phdr,
@@ -415,17 +421,24 @@ fn generateShim(
     const payload_phdr_offset = header.phoff + @sizeOf(Phdr) * (header.phnum - 1);
     try stream.seekableStream().seekTo(payload_phdr_offset);
     try stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
+    if (need_bswap) {
+        std.mem.byteSwapAllFields(Phdr, &payload_phdr);
+    }
+    const payload_vaddr = payload_phdr.p_vaddr;
 
     // Update the payload file and memory size in the output buffer.
     const size_type = SizeType(bitwidth);
     payload_phdr.p_filesz = @intCast(size_type, payload_size);
     payload_phdr.p_memsz = @intCast(size_type, payload_size);
     try stream.seekableStream().seekTo(payload_phdr_offset);
+    if (need_bswap) {
+        std.mem.byteSwapAllFields(Phdr, &payload_phdr);
+    }
     try stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
 
     // Encode the payload into the output buffer.
     try stream.seekableStream().seekTo(template.len);
-    try encodePayload(bitwidth, &stream, payload_phdr.p_vaddr, payload);
+    try encodePayload(bitwidth, endian, &stream, payload_vaddr, payload);
 
     return buffer;
 }
