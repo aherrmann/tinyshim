@@ -2,7 +2,6 @@ const builtin = @import("builtin");
 const clap = @import("clap");
 const std = @import("std");
 const shim_templates = @import("shim_templates");
-const SimpleBumpAllocator = @import("allocator.zig").SimpleBumpAllocator;
 const Payload = @import("payload.zig").Payload;
 
 const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
@@ -115,13 +114,42 @@ const Args = struct {
     }
 };
 
-fn payloadSize(payload: Payload) usize {
-    const pointer_align = @alignOf(*u8);
-    const pointer_size = @alignOf(*u8);
+const Bitwidth = enum {
+    @"32",
+    @"64",
+};
+
+fn SizeType(comptime bitwidth: Bitwidth) type {
+    return switch (bitwidth) {
+        .@"32" => u32,
+        .@"64" => u64,
+    };
+}
+
+fn pointerSize(bitwidth: Bitwidth) usize {
+    return switch (bitwidth) {
+        .@"32" => 4,
+        .@"64" => 8,
+    };
+}
+
+fn pointerAlignment(bitwidth: Bitwidth) usize {
+    return switch (bitwidth) {
+        .@"32" => 4,
+        .@"64" => 8,
+    };
+}
+
+fn payloadSize(bitwidth: Bitwidth, payload: Payload) usize {
     var result: usize = 0;
 
+    const pointer_size = pointerSize(bitwidth);
+    const pointer_align = pointerAlignment(bitwidth);
+
     // Payload struct
-    result += std.mem.alignForward(@sizeOf(Payload), pointer_align);
+    result += pointer_size; // exec
+    result += pointer_size; // argc_pre
+    result += pointer_size; // argv_pre
 
     // argv_pre pointer array
     result += payload.argc_pre * pointer_size;
@@ -140,47 +168,94 @@ fn payloadSize(payload: Payload) usize {
 
 test "payloadSize on empty payload" {
     const payload = Payload{
-        .exec = "",
-        .argc_pre = 0,
-        .argv_pre = &[_][*:0]const u8{},
+        .exec = "", // 4/8 + 1
+        .argc_pre = 0, // 4/8
+        .argv_pre = &[_][*:0]const u8{}, // 4/8 + 0
     };
 
-    const expectedSize = std.mem.alignForward(@sizeOf(Payload) + 1, @alignOf(*u8));
-    try std.testing.expectEqual(expectedSize, payloadSize(payload));
+    try std.testing.expectEqual(4 + 4 + 4 + std.mem.alignForward(1, 4), payloadSize(.@"32", payload));
+    try std.testing.expectEqual(8 + 8 + 8 + std.mem.alignForward(1, 8), payloadSize(.@"64", payload));
 }
 
 test "payloadSize on non-empty payload" {
     const payload = Payload{
-        .exec = "/bin/echo",
-        .argc_pre = 2,
-        .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" },
+        .exec = "/bin/echo", // 4/8 + 10
+        .argc_pre = 2, // 4/8
+        .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" }, // 4/8 + 2*4/8 + 6 + 8
     };
 
-    const expectedSize = std.mem.alignForward(@sizeOf(Payload) + 2 * @sizeOf(*u8) + 10 + 6 + 8, @alignOf(*u8));
-    try std.testing.expectEqual(expectedSize, payloadSize(payload));
+    try std.testing.expectEqual(4 + 4 + 4 + 2 * 4 + std.mem.alignForward(10 + 6 + 8, 4), payloadSize(.@"32", payload));
+    try std.testing.expectEqual(8 + 8 + 8 + 2 * 8 + std.mem.alignForward(10 + 6 + 8, 8), payloadSize(.@"64", payload));
 }
 
-fn encodePayload(buffer: []u8, offset: usize, payload: Payload) !void {
-    var buffer_allocator = SimpleBumpAllocator.init(buffer);
+fn streamAdvance(stream: anytype, size: usize) !u64 {
+    const offset = try stream.seekableStream().getPos();
+    try stream.seekableStream().seekBy(@intCast(i64, size));
+    return offset;
+}
 
-    var encoded_payload = &(try buffer_allocator.alloc(Payload, 1))[0];
-    var encoded_argv_pre = try buffer_allocator.alloc([*:0]const u8, payload.argc_pre);
-    var encoded_exec = try buffer_allocator.allocSentinel(u8, std.mem.sliceTo(payload.exec, 0).len, 0);
+fn streamWriteInt(stream: anytype, comptime T: type, value: T) !void {
+    // TODO[AH] Support non-native endian.
+    try stream.writer().writeIntNative(T, value);
+}
 
-    encoded_payload.exec = @intToPtr([*:0]const u8, @ptrToInt(encoded_exec.ptr) - @ptrToInt(buffer.ptr) + offset);
-    encoded_payload.argc_pre = payload.argc_pre;
-    encoded_payload.argv_pre = @intToPtr([*]const [*:0]const u8, @ptrToInt(encoded_argv_pre.ptr) - @ptrToInt(buffer.ptr) + offset);
+fn streamWriteIntAt(stream: anytype, comptime T: type, pos: u64, value: T) !void {
+    const offset = try stream.seekableStream().getPos();
+    try stream.seekableStream().seekTo(pos);
+    // TODO[AH] Support non-native endian.
+    try stream.writer().writeIntNative(T, value);
+    try stream.seekableStream().seekTo(offset);
+}
 
-    std.mem.copy(u8, encoded_exec, std.mem.sliceTo(payload.exec, 0));
+fn streamWriteZ(stream: anytype, source: [*:0]const u8) !u64 {
+    const offset = try stream.seekableStream().getPos();
+    try stream.writer().writeAll(std.mem.sliceTo(source, 0));
+    try stream.writer().writeByte(0);
+    return offset;
+}
+
+fn encodePayload(comptime bitwidth: Bitwidth, stream: anytype, offset: usize, payload: Payload) !void {
+    const size_type = SizeType(bitwidth);
+    const pointer_size = pointerSize(bitwidth);
+
+    const stream_offset = try stream.seekableStream().getPos();
+
+    const payload_exec_offset = try streamAdvance(stream, pointer_size);
+    try streamWriteInt(stream, size_type, @intCast(size_type, payload.argc_pre));
+    const payload_argv_pre_offset = try streamAdvance(stream, pointer_size);
+
+    var argv_pre_offset = try streamAdvance(stream, payload.argc_pre * pointer_size);
+    try streamWriteIntAt(
+        stream,
+        size_type,
+        payload_argv_pre_offset,
+        @intCast(size_type, argv_pre_offset - stream_offset + offset),
+    );
+
+    const exec_offset = try streamWriteZ(stream, payload.exec);
+    try streamWriteIntAt(
+        stream,
+        size_type,
+        payload_exec_offset,
+        @intCast(size_type, exec_offset - stream_offset + offset),
+    );
 
     for (payload.argv_pre[0..payload.argc_pre]) |arg, i| {
-        var encoded_arg = try buffer_allocator.allocSentinel(u8, std.mem.sliceTo(arg, 0).len, 0);
-        encoded_argv_pre[i] = @intToPtr([*:0]const u8, @ptrToInt(encoded_arg.ptr) - @ptrToInt(buffer.ptr) + offset);
-        std.mem.copy(u8, encoded_arg, std.mem.sliceTo(arg, 0));
+        const arg_offset = try streamWriteZ(stream, arg);
+        try streamWriteIntAt(
+            stream,
+            size_type,
+            argv_pre_offset + i * pointer_size,
+            @intCast(size_type, arg_offset - stream_offset + offset),
+        );
     }
 }
 
-test "encodePayload on empty payload" {
+fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth) !void {
+    const size_type = SizeType(bitwidth);
+    const pointer_size = pointerSize(bitwidth);
+    const pointer_align = pointerAlignment(bitwidth);
+
     const allocator = std.testing.allocator;
 
     const payload = Payload{
@@ -189,25 +264,56 @@ test "encodePayload on empty payload" {
         .argv_pre = &[_][*:0]const u8{},
     };
 
-    var buffer = try allocator.alloc(u8, payloadSize(payload));
+    var buffer = try allocator.alloc(u8, payloadSize(bitwidth, payload));
     defer allocator.free(buffer);
 
-    const offset: usize = 8 * @alignOf(*u8);
-    try encodePayload(buffer, offset, payload);
+    var stream = std.io.fixedBufferStream(buffer);
+    const offset: usize = 8 * pointer_align;
+    try encodePayload(bitwidth, &stream, offset, payload);
 
-    const exec_offset = @offsetOf(Payload, "exec");
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(offset + @sizeOf(Payload)), buffer[exec_offset .. exec_offset + @sizeOf(*u8)]);
+    const payload_size = 3 * pointer_size;
+    const payload_exec_offset = 0;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@intCast(size_type, offset + payload_size)),
+        buffer[payload_exec_offset .. payload_exec_offset + pointer_size],
+    );
 
-    const argc_pre_offset = @offsetOf(Payload, "argc_pre");
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(@as(usize, 0)), buffer[argc_pre_offset .. argc_pre_offset + @sizeOf(usize)]);
+    const payload_argc_pre_offset = pointer_size;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@as(size_type, 0)),
+        buffer[payload_argc_pre_offset .. payload_argc_pre_offset + pointer_size],
+    );
 
-    const argv_pre_offset = @offsetOf(Payload, "argv_pre");
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(offset + @sizeOf(Payload)), buffer[argv_pre_offset .. argv_pre_offset + @sizeOf(*u8)]);
+    const payload_argv_pre_offset = 2 * pointer_size;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@intCast(size_type, offset + payload_size)),
+        buffer[payload_argv_pre_offset .. payload_argv_pre_offset + pointer_size],
+    );
 
-    try std.testing.expectEqualSlices(u8, ""[0..1], buffer[@sizeOf(Payload) .. @sizeOf(Payload) + 1]);
+    const exec_offset = payload_size;
+    try std.testing.expectEqualSlices(
+        u8,
+        ""[0..1],
+        buffer[exec_offset .. exec_offset + 1],
+    );
 }
 
-test "encodePayload on non-empty payload" {
+test "encodePayload on empty payload at 32 bit" {
+    try testEncodePayloadEmpty(.@"32");
+}
+
+test "encodePayload on empty payload at 64 bit" {
+    try testEncodePayloadEmpty(.@"64");
+}
+
+fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth) !void {
+    const size_type = SizeType(bitwidth);
+    const pointer_size = pointerSize(bitwidth);
+    const pointer_align = pointerAlignment(bitwidth);
+
     const allocator = std.testing.allocator;
 
     const payload = Payload{
@@ -216,30 +322,112 @@ test "encodePayload on non-empty payload" {
         .argv_pre = &[_][*:0]const u8{ "Hello", "World!\n" },
     };
 
-    var buffer = try allocator.alloc(u8, payloadSize(payload));
+    var buffer = try allocator.alloc(u8, payloadSize(bitwidth, payload));
     defer allocator.free(buffer);
 
-    const offset: usize = 8 * @alignOf(*u8);
-    try encodePayload(buffer, offset, payload);
+    var stream = std.io.fixedBufferStream(buffer);
+    const offset: usize = 8 * pointer_align;
+    try encodePayload(bitwidth, &stream, offset, payload);
 
-    const exec_offset = @offsetOf(Payload, "exec");
-    const exec_value_offset = @sizeOf(Payload) + 2 * @sizeOf(*u8);
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(offset + exec_value_offset), buffer[exec_offset .. exec_offset + @sizeOf(*u8)]);
+    const payload_size = 3 * pointer_size;
+    const payload_exec_offset = 0;
+    const exec_offset = payload_size + 2 * pointer_size;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@intCast(size_type, offset + exec_offset)),
+        buffer[payload_exec_offset .. payload_exec_offset + pointer_size],
+    );
 
-    const argc_pre_offset = @offsetOf(Payload, "argc_pre");
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(@as(usize, 2)), buffer[argc_pre_offset .. argc_pre_offset + @sizeOf(usize)]);
+    const payload_argc_pre_offset = pointer_size;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@as(size_type, 2)),
+        buffer[payload_argc_pre_offset .. payload_argc_pre_offset + pointer_size],
+    );
 
-    const argv_pre_offset = @offsetOf(Payload, "argv_pre");
-    const argv_pre_array_offset = @sizeOf(Payload);
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(offset + argv_pre_array_offset), buffer[argv_pre_offset .. argv_pre_offset + @sizeOf(*u8)]);
+    const payload_argv_pre_offset = 2 * pointer_size;
+    const argv_pre_offset = payload_size;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@intCast(size_type, offset + argv_pre_offset)),
+        buffer[payload_argv_pre_offset .. payload_argv_pre_offset + pointer_size],
+    );
 
-    try std.testing.expectEqualSlices(u8, "/bin/echo"[0..10], buffer[exec_value_offset .. exec_value_offset + 10]);
+    try std.testing.expectEqualSlices(
+        u8,
+        "/bin/echo"[0..10],
+        buffer[exec_offset .. exec_offset + 10],
+    );
 
-    const argv_pre_value_offset = exec_value_offset + 10;
-    try std.testing.expectEqualSlices(u8, &std.mem.toBytes(@as(usize, offset + argv_pre_value_offset)), buffer[argv_pre_array_offset .. argv_pre_array_offset + @sizeOf(*u8)]);
+    const argv_pre_items_offset = exec_offset + 10;
+    try std.testing.expectEqualSlices(
+        u8,
+        &std.mem.toBytes(@intCast(size_type, offset + argv_pre_items_offset)),
+        buffer[argv_pre_offset .. argv_pre_offset + pointer_size],
+    );
 
-    try std.testing.expectEqualSlices(u8, "Hello"[0..6], buffer[argv_pre_value_offset .. argv_pre_value_offset + 6]);
-    try std.testing.expectEqualSlices(u8, "World!\n"[0..8], buffer[argv_pre_value_offset + 6 .. argv_pre_value_offset + 6 + 8]);
+    try std.testing.expectEqualSlices(
+        u8,
+        "Hello"[0..6],
+        buffer[argv_pre_items_offset .. argv_pre_items_offset + 6],
+    );
+    try std.testing.expectEqualSlices(
+        u8,
+        "World!\n"[0..8],
+        buffer[argv_pre_items_offset + 6 .. argv_pre_items_offset + 6 + 8],
+    );
+}
+
+test "encodePayload on non-empty payload at 32 bit" {
+    try testEncodePayloadNonEmpty(.@"32");
+}
+
+test "encodePayload on non-empty payload at 64 bit" {
+    try testEncodePayloadNonEmpty(.@"64");
+}
+
+fn generateShim(
+    allocator: std.mem.Allocator,
+    comptime bitwidth: Bitwidth,
+    payload: Payload,
+    template: []const u8,
+    header: std.elf.Header,
+) ![]u8 {
+    const payload_size = payloadSize(.@"64", payload);
+
+    var buffer = try allocator.allocBytes(
+        @alignOf(*u8),
+        template.len + payload_size,
+        @alignOf(*u8),
+        @returnAddress(),
+    );
+    var stream = std.io.fixedBufferStream(buffer);
+
+    try stream.writer().writeAll(template);
+
+    // Parse the payload segment's Phdr.
+    // TODO[AH] Support for endiannes.
+    const Phdr = switch (bitwidth) {
+        .@"32" => std.elf.Elf32_Phdr,
+        .@"64" => std.elf.Elf64_Phdr,
+    };
+    var payload_phdr: Phdr = undefined;
+    const payload_phdr_offset = header.phoff + @sizeOf(Phdr) * (header.phnum - 1);
+    try stream.seekableStream().seekTo(payload_phdr_offset);
+    try stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
+
+    // Update the payload file and memory size in the output buffer.
+    const size_type = SizeType(bitwidth);
+    payload_phdr.p_filesz = @intCast(size_type, payload_size);
+    payload_phdr.p_memsz = @intCast(size_type, payload_size);
+    try stream.seekableStream().seekTo(payload_phdr_offset);
+    try stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
+
+    // Encode the payload into the output buffer.
+    try stream.seekableStream().seekTo(template.len);
+    try encodePayload(bitwidth, &stream, payload_phdr.p_vaddr, payload);
+
+    return buffer;
 }
 
 pub fn main() !void {
@@ -255,46 +443,22 @@ pub fn main() !void {
         .argc_pre = args.argv_pre.len,
         .argv_pre = args.argv_pre.ptr,
     };
-    const payload_size = payloadSize(payload);
 
-    const shim_template = args.shim_template;
+    // Load the shim template.
+    const template = args.shim_template;
+    var template_stream = std.io.fixedBufferStream(template);
+    const template_header = try std.elf.Header.read(&template_stream);
 
-    var buffer = try allocator.allocBytes(
-        @alignOf(*u8),
-        shim_template.len + payload_size,
-        @alignOf(*u8),
-        @returnAddress(),
-    );
-    defer allocator.free(buffer);
-
-    // Copy the shim template into the output buffer
-    std.mem.copy(u8, buffer, shim_template);
-
-    // Parse the ELF header from the output buffer
-    var buffer_stream = std.io.fixedBufferStream(buffer);
-    const elf_header = try std.elf.Header.read(&buffer_stream);
-
-    // Parse the payload segment's Phdr.
-    // TODO[AH] Support for 32-bit.
-    // TODO[AH] Support for endiannes.
-    var payload_phdr: std.elf.Elf64_Phdr = undefined;
-    const payload_phdr_offset = elf_header.phoff + @sizeOf(@TypeOf(payload_phdr)) * (elf_header.phnum - 1);
-    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
-    try buffer_stream.reader().readNoEof(std.mem.asBytes(&payload_phdr));
-
-    // Update the payload file and memory size in the output buffer.
-    payload_phdr.p_filesz = payload_size;
-    payload_phdr.p_memsz = payload_size;
-    try buffer_stream.seekableStream().seekTo(payload_phdr_offset);
-    try buffer_stream.writer().writeAll(std.mem.asBytes(&payload_phdr));
-
-    // Encode the payload into the output buffer.
-    try encodePayload(buffer[shim_template.len..], payload_phdr.p_vaddr, payload);
+    const shim = try if (template_header.is_64)
+        generateShim(allocator, .@"64", payload, template, template_header)
+    else
+        generateShim(allocator, .@"32", payload, template, template_header);
+    defer allocator.free(shim);
 
     // Write the shim.
     var out_file = try std.fs.cwd().createFile(args.out_path, .{});
     defer out_file.close();
-    try out_file.writeAll(buffer);
+    try out_file.writeAll(shim);
 
     // Make the shim file executable.
     switch (builtin.os.tag) {
