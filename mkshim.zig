@@ -5,6 +5,10 @@ const shim_templates = @import("shim_templates");
 const Payload = @import("payload.zig").Payload;
 
 const native_endian = builtin.cpu.arch.endian();
+const foreign_endian = switch (native_endian) {
+    .Big => .Little,
+    .Little => .Big,
+};
 const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
 
 const supported_targets = supported: {
@@ -275,24 +279,35 @@ fn testEncodePayloadEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.Endia
 
     const payload_size = 3 * pointer_size;
     const payload_exec_offset = 0;
-    // TODO[AH] handle non-native endian
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@intCast(size_type, offset + payload_size)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @intCast(size_type, offset + payload_size),
+            endian,
+        )),
         buffer[payload_exec_offset .. payload_exec_offset + pointer_size],
     );
 
     const payload_argc_pre_offset = pointer_size;
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@as(size_type, 0)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @as(size_type, 0),
+            endian,
+        )),
         buffer[payload_argc_pre_offset .. payload_argc_pre_offset + pointer_size],
     );
 
     const payload_argv_pre_offset = 2 * pointer_size;
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@intCast(size_type, offset + payload_size)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @intCast(size_type, offset + payload_size),
+            endian,
+        )),
         buffer[payload_argv_pre_offset .. payload_argv_pre_offset + pointer_size],
     );
 
@@ -310,6 +325,10 @@ test "encodePayload on empty payload at 32 bit" {
 
 test "encodePayload on empty payload at 64 bit" {
     try testEncodePayloadEmpty(.@"64", native_endian);
+}
+
+test "encodePayload on empty payload at 64 bit with foreign endian" {
+    try testEncodePayloadEmpty(.@"64", foreign_endian);
 }
 
 fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.Endian) !void {
@@ -335,17 +354,24 @@ fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.En
     const payload_size = 3 * pointer_size;
     const payload_exec_offset = 0;
     const exec_offset = payload_size + 2 * pointer_size;
-    // TODO[AH] handle non-native endian
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@intCast(size_type, offset + exec_offset)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @intCast(size_type, offset + exec_offset),
+            endian,
+        )),
         buffer[payload_exec_offset .. payload_exec_offset + pointer_size],
     );
 
     const payload_argc_pre_offset = pointer_size;
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@as(size_type, 2)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @as(size_type, 2),
+            endian,
+        )),
         buffer[payload_argc_pre_offset .. payload_argc_pre_offset + pointer_size],
     );
 
@@ -353,7 +379,11 @@ fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.En
     const argv_pre_offset = payload_size;
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@intCast(size_type, offset + argv_pre_offset)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @intCast(size_type, offset + argv_pre_offset),
+            endian,
+        )),
         buffer[payload_argv_pre_offset .. payload_argv_pre_offset + pointer_size],
     );
 
@@ -366,7 +396,11 @@ fn testEncodePayloadNonEmpty(comptime bitwidth: Bitwidth, endian: std.builtin.En
     const argv_pre_items_offset = exec_offset + 10;
     try std.testing.expectEqualSlices(
         u8,
-        &std.mem.toBytes(@intCast(size_type, offset + argv_pre_items_offset)),
+        &std.mem.toBytes(std.mem.toNative(
+            size_type,
+            @intCast(size_type, offset + argv_pre_items_offset),
+            endian,
+        )),
         buffer[argv_pre_offset .. argv_pre_offset + pointer_size],
     );
 
@@ -388,6 +422,10 @@ test "encodePayload on non-empty payload at 32 bit" {
 
 test "encodePayload on non-empty payload at 64 bit" {
     try testEncodePayloadNonEmpty(.@"64", native_endian);
+}
+
+test "encodePayload on non-empty payload at 64 bit with foreign endian" {
+    try testEncodePayloadNonEmpty(.@"64", foreign_endian);
 }
 
 fn generateShim(
