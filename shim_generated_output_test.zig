@@ -159,7 +159,7 @@ test "mkshim generated shim invokes /bin/echo Hello $@" {
     try std.testing.expectEqualStrings("Hello World!\n", result.stdout);
 }
 
-test "mkshim can target x86_32-linux" {
+fn testMkShimTarget(target_flag: []const u8, target_emu: []const u8) !void {
     const test_args = try TestArgs.init();
     defer test_args.deinit();
 
@@ -175,7 +175,7 @@ test "mkshim can target x86_32-linux" {
         .argv = &[_][]const u8{
             test_args.mkshim,
             "--target",
-            "x86_32-linux",
+            target_flag,
             "/bin/echo",
             "--prepend",
             "Hello",
@@ -191,7 +191,7 @@ test "mkshim can target x86_32-linux" {
     //   Potentially as a Bazel fetched or built distribution.
     const result = try exec(.{
         .argv = &[_][]const u8{
-            "qemu-i386",
+            target_emu,
             shim_path,
             "World!",
         },
@@ -202,89 +202,14 @@ test "mkshim can target x86_32-linux" {
     try std.testing.expectEqualStrings("Hello World!\n", result.stdout);
 }
 
-// TODO[AH] Factor out the common parts
+test "mkshim can target x86_32-linux" {
+    try testMkShimTarget("x86_32-linux", "qemu-i386");
+}
+
 test "mkshim can target ppc-linux" {
-    const test_args = try TestArgs.init();
-    defer test_args.deinit();
-
-    var tmp = try TmpDir.init();
-    defer tmp.deinit();
-
-    const allocator = std.testing.allocator;
-
-    const shim_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp.path, "shim" });
-    defer allocator.free(shim_path);
-
-    const mkshim_result = try exec(.{
-        .argv = &[_][]const u8{
-            test_args.mkshim,
-            "--target",
-            "ppc-linux",
-            "/bin/echo",
-            "--prepend",
-            "Hello",
-            shim_path,
-        },
-    });
-    defer allocator.free(mkshim_result.stdout);
-    defer allocator.free(mkshim_result.stderr);
-
-    // TODO[AH] Infer emulation based on host and target platforms.
-    // TODO[AH] Include emulator in a more hermetic way.
-    //   At least as a toolchain discovered in a repository rule.
-    //   Potentially as a Bazel fetched or built distribution.
-    const result = try exec(.{
-        .argv = &[_][]const u8{
-            "qemu-ppc",
-            shim_path,
-            "World!",
-        },
-    });
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
-
-    try std.testing.expectEqualStrings("Hello World!\n", result.stdout);
+    try testMkShimTarget("ppc-linux", "qemu-ppc");
 }
 
 test "mkshim can target aarch64-linux" {
-    const test_args = try TestArgs.init();
-    defer test_args.deinit();
-
-    var tmp = try TmpDir.init();
-    defer tmp.deinit();
-
-    const allocator = std.testing.allocator;
-
-    const shim_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp.path, "shim" });
-    defer allocator.free(shim_path);
-
-    const mkshim_result = try exec(.{
-        .argv = &[_][]const u8{
-            test_args.mkshim,
-            "--target",
-            "aarch64-linux",
-            "/bin/echo",
-            "--prepend",
-            "Hello",
-            shim_path,
-        },
-    });
-    defer allocator.free(mkshim_result.stdout);
-    defer allocator.free(mkshim_result.stderr);
-
-    // TODO[AH] Infer emulation based on host and target platforms.
-    // TODO[AH] Include emulator in a more hermetic way.
-    //   At least as a toolchain discovered in a repository rule.
-    //   Potentially as a Bazel fetched or built distribution.
-    const result = try exec(.{
-        .argv = &[_][]const u8{
-            "qemu-aarch64",
-            shim_path,
-            "World!",
-        },
-    });
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
-
-    try std.testing.expectEqualStrings("Hello World!\n", result.stdout);
+    try testMkShimTarget("aarch64-linux", "qemu-aarch64");
 }
