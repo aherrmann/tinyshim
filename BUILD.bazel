@@ -76,6 +76,14 @@ platform(
 )
 
 platform(
+    name = "ppc-linux",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:ppc",
+    ],
+)
+
+platform(
     name = "x86_32-linux",
     constraint_values = [
         "@platforms//os:linux",
@@ -99,6 +107,7 @@ configure_shrink_shims(
     shrink = ":shrink",
     targets = [
         ":aarch64-linux",
+        ":ppc-linux",
         ":x86_32-linux",
         ":x86_64-linux",
     ],
