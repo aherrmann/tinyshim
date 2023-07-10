@@ -7,6 +7,19 @@ zig_package(
     visibility = ["//mkshim:__pkg__"],
 )
 
+zig_test(
+    name = "encode_payload_test",
+    main = "encode_payload.zig",
+    deps = [":payload"],
+)
+
+zig_package(
+    name = "encode_payload",
+    main = "encode_payload.zig",
+    visibility = ["//mkshim:__pkg__"],
+    deps = [":payload"],
+)
+
 zig_binary(
     name = "_shim_unconfigured",
     csrcs = ["payload.c"],
