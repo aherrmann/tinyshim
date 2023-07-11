@@ -4,7 +4,7 @@ zig_test(
     name = "mkshim_test",
     main = "mkshim.zig",
     deps = [
-        "//shim/linux:encode_payload",
+        "//shim/linux:generate_shim",
         "//shim/linux:payload",
         "//shim/linux:shim_templates",
         "@clap",
@@ -15,7 +15,7 @@ zig_binary(
     name = "mkshim",
     main = "mkshim.zig",
     deps = [
-        "//shim/linux:encode_payload",
+        "//shim/linux:generate_shim",
         "//shim/linux:payload",
         "//shim/linux:shim_templates",
         "@clap",

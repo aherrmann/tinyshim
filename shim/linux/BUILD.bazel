@@ -20,6 +20,16 @@ zig_package(
     deps = [":payload"],
 )
 
+zig_package(
+    name = "generate_shim",
+    main = "generate_shim.zig",
+    visibility = ["//mkshim:__pkg__"],
+    deps = [
+        ":encode_payload",
+        ":payload",
+    ],
+)
+
 zig_binary(
     name = "_shim_unconfigured",
     csrcs = ["payload.c"],
