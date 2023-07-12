@@ -19,6 +19,16 @@ zig_package(
     deps = [":payload"],
 )
 
+zig_test(
+    name = "generate_shim_test",
+    main = "generate_shim.zig",
+    deps = [
+        ":encode_payload",
+        ":payload",
+        "//shim/common:shim_spec",
+    ],
+)
+
 zig_package(
     name = "generate_shim",
     main = "generate_shim.zig",

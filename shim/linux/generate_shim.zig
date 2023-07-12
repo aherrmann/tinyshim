@@ -35,6 +35,24 @@ const PayloadFromSpec = struct {
     }
 };
 
+test "payload from spec" {
+    const spec = ShimSpec{
+        .exec = "/bin/hello",
+        .argv_pre = &[_][]const u8{
+            "Hello",
+            "World!",
+        },
+    };
+    const payload_from_spec = try PayloadFromSpec.init(std.testing.allocator, spec);
+    defer payload_from_spec.deinit(std.testing.allocator);
+    const payload = payload_from_spec.payload;
+
+    try std.testing.expectEqualStrings("/bin/hello", std.mem.sliceTo(payload.exec, 0));
+    try std.testing.expectEqual(@as(usize, 2), payload.argc_pre);
+    try std.testing.expectEqualStrings("Hello", std.mem.sliceTo(payload.argv_pre[0], 0));
+    try std.testing.expectEqualStrings("World!", std.mem.sliceTo(payload.argv_pre[1], 0));
+}
+
 fn appendPayload(
     comptime bitwidth: Bitwidth,
     stream: *std.io.StreamSource,
