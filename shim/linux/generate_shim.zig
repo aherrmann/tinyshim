@@ -126,3 +126,6 @@ pub fn generateShim(
 
     return buffer;
 }
+
+// TODO[AH] Define a unit test for generateShim.
+//   Likely requires exposing createTestElf from elf_util.
