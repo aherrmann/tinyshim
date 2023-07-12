@@ -15,8 +15,8 @@ zig_binary(
     name = "mkshim",
     main = "mkshim.zig",
     deps = [
+        "//shim/common:shim_spec",
         "//shim/linux:generate_shim",
-        "//shim/linux:payload",
         "//shim/linux:shim_templates",
         "@clap",
     ],

@@ -1,10 +1,39 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const ShimSpec = @import("shim_spec").ShimSpec;
 const Payload = @import("payload").Payload;
 const encode_payload = @import("encode_payload");
 const Bitwidth = encode_payload.Bitwidth;
 
 const native_endian = builtin.cpu.arch.endian();
+
+const PayloadFromSpec = struct {
+    payload: Payload,
+
+    pub fn init(allocator: std.mem.Allocator, spec: ShimSpec) !PayloadFromSpec {
+        return PayloadFromSpec{
+            .payload = Payload{
+                .exec = try allocator.dupeZ(u8, spec.exec),
+                .argc_pre = spec.argv_pre.len,
+                .argv_pre = argv_pre: {
+                    var argv_pre = try allocator.alloc([*:0]const u8, spec.argv_pre.len);
+                    for (spec.argv_pre) |arg, i| {
+                        argv_pre[i] = try allocator.dupeZ(u8, arg);
+                    }
+                    break :argv_pre argv_pre.ptr;
+                },
+            },
+        };
+    }
+
+    pub fn deinit(self: PayloadFromSpec, allocator: std.mem.Allocator) void {
+        for (self.payload.argv_pre[0..self.payload.argc_pre]) |arg| {
+            allocator.free(std.mem.sliceTo(arg, 0));
+        }
+        allocator.free(self.payload.argv_pre[0..self.payload.argc_pre]);
+        allocator.free(std.mem.sliceTo(self.payload.exec, 0));
+    }
+};
 
 fn appendPayload(
     comptime bitwidth: Bitwidth,
@@ -50,9 +79,13 @@ fn appendPayload(
 
 pub fn generateShim(
     allocator: std.mem.Allocator,
-    payload: Payload,
+    spec: ShimSpec,
     template: []const u8,
 ) ![]u8 {
+    const payload_from_spec = try PayloadFromSpec.init(allocator, spec);
+    defer payload_from_spec.deinit(allocator);
+    const payload = payload_from_spec.payload;
+
     var template_stream = std.io.fixedBufferStream(template);
     const template_header = try std.elf.Header.read(&template_stream);
 

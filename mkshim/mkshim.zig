@@ -2,7 +2,7 @@ const builtin = @import("builtin");
 const clap = @import("clap");
 const std = @import("std");
 const shim_templates = @import("shim_templates");
-const Payload = @import("payload").Payload;
+const ShimSpec = @import("shim_spec").ShimSpec;
 const generate_shim = @import("generate_shim");
 
 const native_target = @tagName(builtin.target.cpu.arch) ++ "-" ++ @tagName(builtin.target.os.tag);
@@ -41,8 +41,7 @@ const Args = struct {
     res: clap.Result(clap.Help, &params, parsers),
 
     shim_template: []const u8,
-    argv_pre: []const [*:0]const u8,
-    exec: [:0]const u8,
+    shim_spec: ShimSpec,
     out_path: []const u8,
 
     fn usage() !void {
@@ -88,29 +87,22 @@ const Args = struct {
             });
             return error.InvalidArgument;
         };
-        var argv_pre = try allocator.alloc([*:0]const u8, res.args.prepend.len);
-        for (res.args.prepend) |arg, i| {
-            argv_pre[i] = try allocator.dupeZ(u8, arg);
-        }
-        const exec = try allocator.dupeZ(u8, res.positionals[0]);
+        const shim_spec = ShimSpec{
+            .exec = res.positionals[0],
+            .argv_pre = res.args.prepend,
+        };
         const out_path = try allocator.dupeZ(u8, res.positionals[1]);
         return Args{
             .diag = diag,
             .res = res,
             .shim_template = shim_template,
-            .argv_pre = argv_pre,
-            .exec = exec,
+            .shim_spec = shim_spec,
             .out_path = out_path,
         };
     }
 
     pub fn deinit(self: *Args) void {
         var allocator: std.mem.Allocator = self.res.arena.allocator();
-        for (self.argv_pre) |arg| {
-            allocator.free(std.mem.sliceTo(arg, 0));
-        }
-        allocator.free(self.argv_pre);
-        allocator.free(self.exec);
         allocator.free(self.out_path);
         self.res.deinit();
     }
@@ -124,16 +116,9 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // TODO[AH] Replace by generic ShimSpec
-    const payload = Payload{
-        .exec = args.exec,
-        .argc_pre = args.argv_pre.len,
-        .argv_pre = args.argv_pre.ptr,
-    };
-
     // Load the shim template and generate the shim.
     const template = args.shim_template;
-    const shim = try generate_shim.generateShim(allocator, payload, template);
+    const shim = try generate_shim.generateShim(allocator, args.shim_spec, template);
     defer allocator.free(shim);
 
     // Write the shim.

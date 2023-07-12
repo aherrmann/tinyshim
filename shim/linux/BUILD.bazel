@@ -16,7 +16,6 @@ zig_test(
 zig_package(
     name = "encode_payload",
     main = "encode_payload.zig",
-    visibility = ["//mkshim:__pkg__"],
     deps = [":payload"],
 )
 
@@ -27,6 +26,7 @@ zig_package(
     deps = [
         ":encode_payload",
         ":payload",
+        "//shim/common:shim_spec",
     ],
 )
 
