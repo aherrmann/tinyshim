@@ -1,0 +1,16 @@
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary")
+
+zig_binary(
+    name = "_shim_unconfigured",
+    main = "shim.zig",
+    tags = ["manual"],
+)
+
+zig_configure_binary(
+    name = "shim_unstripped",
+    actual = ":_shim_unconfigured",
+    mode = "release_small",
+    # TODO[AH] Move platform into configure_shrink_shims.
+    target = "//platforms:x86_64-windows",
+    threaded = "single",
+)
