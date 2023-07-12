@@ -1,0 +1,21 @@
+load("@rules_zig//zig:defs.bzl", "zig_package", "zig_test")
+
+zig_test(
+    name = "allocator_test",
+    main = "allocator.zig",
+)
+
+zig_package(
+    name = "allocator",
+    main = "allocator.zig",
+    visibility = ["//shim:__subpackages__"],
+)
+
+zig_package(
+    name = "shim_spec",
+    main = "spec.zig",
+    visibility = [
+        "//mkshim:__subpackages__",
+        "//shim:__subpackages__",
+    ],
+)

@@ -1,0 +1,97 @@
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_package", "zig_test")
+load("//shrink/elf:defs.bzl", "configure_shrink_shims")
+
+zig_package(
+    name = "payload",
+    main = "payload.zig",
+    visibility = ["//mkshim:__pkg__"],
+)
+
+zig_test(
+    name = "encode_payload_test",
+    main = "encode_payload.zig",
+    deps = [":payload"],
+)
+
+zig_package(
+    name = "encode_payload",
+    main = "encode_payload.zig",
+    deps = [":payload"],
+)
+
+zig_test(
+    name = "generate_shim_test",
+    main = "generate_shim.zig",
+    deps = [
+        ":encode_payload",
+        ":payload",
+        "//shim/common:shim_spec",
+    ],
+)
+
+zig_package(
+    name = "generate_shim",
+    main = "generate_shim.zig",
+    visibility = ["//mkshim:__pkg__"],
+    deps = [
+        ":encode_payload",
+        ":payload",
+        "//shim/common:shim_spec",
+    ],
+)
+
+zig_binary(
+    name = "_shim_unconfigured",
+    csrcs = ["payload.c"],
+    linker_script = "shim.ld",
+    main = "shim.zig",
+    tags = ["manual"],
+    deps = [
+        ":payload",
+        "//shim/common:allocator",
+    ],
+)
+
+zig_configure_binary(
+    name = "shim_unstripped",
+    actual = ":_shim_unconfigured",
+    mode = "release_small",
+    threaded = "single",
+)
+
+zig_test(
+    name = "shim_unstripped_output_test",
+    args = ["$(rootpath :shim_unstripped)"],
+    data = [":shim_unstripped"],
+    main = "shim_unstripped_output_test.zig",
+)
+
+zig_test(
+    name = "shim_layout_test",
+    args = ["$(rootpath :shim_unstripped)"],
+    data = [":shim_unstripped"],
+    main = "shim_layout_test.zig",
+    deps = ["//shrink/elf:elf_util"],
+)
+
+configure_shrink_shims(
+    name = "shim_template_files",
+    section_name = ".payload",
+    shim = ":shim_unstripped",
+    shim_prefix = "shim-",
+    shrink = "//shrink/elf:shrink",
+    targets = [
+        "//platforms:aarch64-linux",
+        "//platforms:ppc-linux",
+        "//platforms:x86_32-linux",
+        "//platforms:x86_64-linux",
+    ],
+    zig_out = "shim_templates.zig",
+)
+
+zig_package(
+    name = "shim_templates",
+    extra_srcs = [":shim_template_files"],
+    main = ":shim_templates.zig",
+    visibility = ["//mkshim:__pkg__"],
+)

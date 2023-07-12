@@ -1,0 +1,23 @@
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_package", "zig_test")
+
+zig_test(
+    name = "elf_util_test",
+    main = "elf_util.zig",
+)
+
+zig_package(
+    name = "elf_util",
+    main = "elf_util.zig",
+    visibility = ["//shim/linux:__pkg__"],
+)
+
+zig_binary(
+    name = "shrink",
+    main = "shrink.zig",
+    tags = ["manual"],  # prevent build in target configuration.
+    visibility = ["//shim/linux:__subpackages__"],
+    deps = [
+        ":elf_util",
+        "@clap",
+    ],
+)

@@ -1,5 +1,5 @@
 const std = @import("std");
-const elf_util = @import("elf_util.zig");
+const elf_util = @import("elf_util");
 
 test ".payload section at end of file" {
     const allocator = std.testing.allocator;
