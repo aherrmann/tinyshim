@@ -1,0 +1,50 @@
+load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_test")
+
+zig_binary(
+    name = "_shim_unconfigured",
+    main = "shim.zig",
+    tags = ["manual"],
+)
+
+zig_configure_binary(
+    name = "shim_unstripped",
+    actual = ":_shim_unconfigured",
+    mode = "release_small",
+    # TODO[AH] Move platform into configure_shrink_shims.
+    target = "//platforms:x86_64-windows",
+    threaded = "single",
+)
+
+zig_test(
+    name = "shim_unstripped_output_test",
+    args = ["$(rootpath :shim_unstripped)"],
+    data = [":shim_unstripped"],
+    main = "shim_unstripped_output_test.zig",
+    # Note, we're setting 'requires-fakeroot' to work around a bug in a patch
+    # applied to Wine on Debian based systems. As of wine-6.0.3~repack-1 the
+    # patch `fixes/temporary-directory.patch` ignores `$WINEPREFIX` and forces
+    # `server_dir=/run/user/$UID/wine/...`, so long as `opendir` succeeds on
+    # `/run/user/$UID`. That logic is invalid within Bazel's sandbox, because
+    # Bazel remounts that path as read-only, but wine requires (but doesn't
+    # check for) write access. Any attempt to execute wine within Bazel's
+    # sandbox will subsequently fail.
+    #
+    # The workaround is to use `fakeroot` to force `$UID = 0`. So long as the
+    # build is not run as root, this should fail the existence check on
+    # `/run/user/0` and trigger a fall-back to `$WINEPREFIX`.
+    # Running wine under strace confirms this:
+    #
+    # ```
+    # WINEPREFIX=/home/.../execroot/__main__/bazel-out/k8-fastbuild/bin/shim/windows/shim_unstripped_output_test.runfiles/__main__/zig-cache/tmp/e3d0L-IUjzvlW-dv
+    # ...
+    # openat(AT_FDCWD, "/run/user/0", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = -1 ENOENT (No such file or directory)
+    # ...
+    # creat("/home/.../execroot/__main__/bazel-out/k8-fastbuild/bin/shim/windows/shim_unstripped_output_test.runfiles/__main__/zig-cache/tmp/e3d0L-IUjzvlW-dv/wineserver", 0400) = 4
+    # ```
+    #
+    # An alternative workaroud would be to set the 'no-sandbox' tag. However,
+    # in that case we lose Bazel's sandboxing features for this test.
+    #
+    # TODO Raise an issue on the Debian issue tracker.
+    tags = ["requires-fakeroot"],
+)
